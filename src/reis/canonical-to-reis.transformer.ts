@@ -55,6 +55,9 @@ import { ICanonicalToReisTransformer } from './reis.interfaces';
 /** Only agreed ID document type (Appendix "ID Document Type"); default when no type is mapped. */
 export const DEFAULT_DOCUMENT_TYPE = 'PASS';
 
+/** A-Z, a-z, space, dot, hyphen, apostrophe (applied after trimming). */
+const LATIN_NAME = /^[A-Za-z .'-]+$/;
+
 @Injectable()
 export class CanonicalToReisTransformer implements ICanonicalToReisTransformer {
   constructor(
@@ -108,8 +111,8 @@ export class CanonicalToReisTransformer implements ICanonicalToReisTransformer {
 
     const items: ReisIndividualItems = {
       entity_type: 'PP',
-      first_name: this.text(c.firstName, 'FIRST_NAME'),
-      last_name: this.text(c.lastName, 'LAST_NAME'),
+      first_name: this.latinName(c.firstName, 'FIRST_NAME'),
+      last_name: this.latinName(c.lastName, 'LAST_NAME'),
       cus_birth_date: c.birthDate,
       account_manager_login: this.text(c.accountManagerLogin, 'ACCOUNT_MANAGER_LOGIN'),
       account_manager_email: this.text(c.accountManagerEmail, 'ACCOUNT_MANAGER_EMAIL'),
@@ -159,7 +162,7 @@ export class CanonicalToReisTransformer implements ICanonicalToReisTransformer {
 
     const items: ReisCorporateItems = {
       entity_type: 'PM',
-      business_name: this.text(c.businessName, 'CRP_BUSINESS_NAME'),
+      business_name: this.latinName(c.businessName, 'CRP_BUSINESS_NAME'),
       account_manager_login: this.text(c.accountManagerLogin, 'ACCOUNT_MANAGER_LOGIN'),
       account_manager_email: this.text(c.accountManagerEmail, 'ACCOUNT_MANAGER_EMAIL'),
       pep: c.pep,
@@ -243,8 +246,8 @@ export class CanonicalToReisTransformer implements ICanonicalToReisTransformer {
     const validUntil = this.text(r.validUntil, 'relation.valid_until');
     const items: ReisIndividualRelationEntry['items'] = {
       entity_type: 'PP',
-      first_name: this.text(r.firstName, 'relation.first_name'),
-      last_name: this.text(r.lastName, 'relation.last_name'),
+      first_name: this.latinName(r.firstName, 'relation.first_name'),
+      last_name: this.latinName(r.lastName, 'relation.last_name'),
       cus_birth_date: r.birthDate,
       nationality: await this.country('NATIONALITY', r.nationality),
       citizenship: await this.country('CITIZENSHIP', r.citizenship),
@@ -275,7 +278,7 @@ export class CanonicalToReisTransformer implements ICanonicalToReisTransformer {
     const relationshipId = this.relationshipId(r.relationshipId, CORPORATE_RELATION_IDS);
     const items: ReisCorporateRelationEntry['items'] = {
       entity_type: 'PM',
-      business_name: this.text(r.businessName, 'relation.business_name'),
+      business_name: this.latinName(r.businessName, 'relation.business_name'),
       nationality: await this.country('NATIONALITY', r.nationality),
     };
     if (r.tradeNo !== undefined) items.trade_no = r.tradeNo;
@@ -338,6 +341,22 @@ export class CanonicalToReisTransformer implements ICanonicalToReisTransformer {
     if (typeof value !== 'string' || value.trim() === '')
       throw new MissingRequiredFieldError(field);
     return value;
+  }
+
+  /**
+   * Names are screened by REIS against lists that are mostly Latin script, and only in the same
+   * script: after trimming only A-Z, a-z, space, dot, hyphen and apostrophe are accepted.
+   * The error names the field, never the value.
+   */
+  private latinName(value: unknown, field: string): string {
+    const name = this.text(value, field);
+    if (!LATIN_NAME.test(name.trim())) {
+      throw new InvalidFieldValueError(
+        field,
+        'must use Latin letters only (A-Z, space, dot, hyphen, apostrophe)',
+      );
+    }
+    return name;
   }
 
   private finite(value: unknown, field: string): number {

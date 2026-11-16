@@ -122,6 +122,14 @@ describe('payloads match the Vneuron Postman V1.4 reference bodies exactly', () 
         systemId: string;
       }[];
     };
+    // The Vneuron QA sample names contain digits (e.g. "...-QA1"); names must now be Latin letters
+    // only, so the digits are stripped from the sample before it is used as input and expectation.
+    for (const rel of expected.relations) {
+      for (const k of ['first_name', 'last_name', 'business_name']) {
+        const v = rel.items[k];
+        if (typeof v === 'string') rel.items[k] = v.replace(/\d/g, '');
+      }
+    }
     const [ceo, owner] = expected.relations;
     const actual = await transformer.transform(mapper.map(fromCorporate(expected)), [
       {

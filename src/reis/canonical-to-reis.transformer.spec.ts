@@ -91,6 +91,48 @@ describe('CanonicalToReisTransformer', () => {
   const corp = async (over?: Partial<CanonicalCorporateCustomer>) =>
     (await transformer.transform(corporate(over))) as ReisCorporateOnboardingRequest;
 
+  describe('Latin-only names (REIS sanctions screening matches the same script only)', () => {
+    const BAD: [string, string][] = [
+      ['Arabic', 'محمد'],
+      ['accented', 'José'],
+      ['mixed script', 'Ali محمد'],
+      ['digits', 'Ali2'],
+      ['symbol', 'Ali & Co'],
+    ];
+    const GOOD = ['Mary-Anne', "O'Brien Jr.", '  Ali Hassan  ', 'Test trading business'];
+
+    const rejectsWithoutValue = async (
+      run: () => Promise<unknown>,
+      field: string,
+      value: string,
+    ) => {
+      const err = await run().catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(InvalidFieldValueError);
+      expect((err as Error).message).toContain(field);
+      expect((err as Error).message).not.toContain(value);
+    };
+
+    it.each(BAD)(
+      'customer first_name / last_name reject %s names (field name only)',
+      async (_n, v) => {
+        await rejectsWithoutValue(() => ind({ firstName: v }), 'FIRST_NAME', v);
+        await rejectsWithoutValue(() => ind({ lastName: v }), 'LAST_NAME', v);
+      },
+    );
+
+    it.each(BAD)('corporate business_name rejects %s names (field name only)', async (_n, v) => {
+      await rejectsWithoutValue(() => corp({ businessName: v }), 'CRP_BUSINESS_NAME', v);
+    });
+
+    it('accepts valid Latin names for the customer, sent unchanged', async () => {
+      for (const v of GOOD) {
+        const i = await ind({ firstName: v, lastName: v });
+        expect(i.items).toMatchObject({ first_name: v, last_name: v });
+        expect((await corp({ businessName: v })).items.business_name).toBe(v);
+      }
+    });
+  });
+
   describe('Individual envelope', () => {
     it('builds the confirmed structure: envelope on top, entity_type and fields inside items', async () => {
       expect(await ind()).toEqual({
@@ -365,6 +407,50 @@ describe('CanonicalToReisTransformer', () => {
     it('defaults a relation tin to PASS when only the passport number is given', async () => {
       const r = await transformer.transform(corporate(), [indRel({ nid: 'P1' })]);
       expect(r.relations[0].items).toMatchObject({ tin: 'PASS', nid: 'P1' });
+    });
+
+    describe('Latin-only names in relations', () => {
+      const BAD: [string, string][] = [
+        ['Arabic', 'محمد'],
+        ['accented', 'José'],
+        ['mixed script', 'Ali محمد'],
+        ['digits', 'Ali2'],
+        ['symbol', 'Ali & Co'],
+      ];
+      it.each(BAD)('individual relation first_name / last_name reject %s names', async (_n, v) => {
+        for (const [key, field] of [
+          ['firstName', 'relation.first_name'],
+          ['lastName', 'relation.last_name'],
+        ] as const) {
+          const err = await transformer
+            .transform(corporate(), [indRel({ [key]: v })])
+            .catch((e: unknown) => e);
+          expect(err).toBeInstanceOf(InvalidFieldValueError);
+          expect((err as Error).message).toContain(field);
+          expect((err as Error).message).not.toContain(v);
+        }
+      });
+
+      it.each(BAD)('corporate relation business_name rejects %s names', async (_n, v) => {
+        const err = await transformer
+          .transform(corporate(), [corpRel({ businessName: v })])
+          .catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(InvalidFieldValueError);
+        expect((err as Error).message).toContain('relation.business_name');
+        expect((err as Error).message).not.toContain(v);
+      });
+
+      it('accepts valid Latin names in both relation kinds', async () => {
+        const r = await transformer.transform(corporate(), [
+          indRel({ firstName: "O'Brien", lastName: 'Smith-Jones Jr.' }),
+          corpRel({ businessName: 'Sub Co. Ltd' }),
+        ]);
+        expect(r.relations[0].items).toMatchObject({
+          first_name: "O'Brien",
+          last_name: 'Smith-Jones Jr.',
+        });
+        expect(r.relations[1].items).toMatchObject({ business_name: 'Sub Co. Ltd' });
+      });
     });
 
     describe('formId 3 mandatory fields (REIS V1.5)', () => {
