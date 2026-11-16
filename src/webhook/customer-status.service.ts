@@ -64,10 +64,21 @@ export class CustomerStatusService {
     // 2. Validate the callback.
     const body = request.body;
     const isObject = typeof body === 'object' && body !== null && !Array.isArray(body);
-    const raw = isObject ? (body as Record<string, unknown>) : {};
-    const errors = isObject
-      ? await validate(plainToInstance(CustomerStatusDto, raw), { forbidUnknownValues: true })
-      : [{ property: 'body' }];
+    const received = isObject ? (body as Record<string, unknown>) : {};
+    // V1.5 names the field "Status" in its attribute table but the sample uses "status": accept
+    // both. Both present with different values is malformed.
+    const statusConflict =
+      received.status !== undefined &&
+      received.Status !== undefined &&
+      received.status !== received.Status;
+    const raw =
+      received.status === undefined && received.Status !== undefined
+        ? { ...received, status: received.Status }
+        : received;
+    const errors =
+      isObject && !statusConflict
+        ? await validate(plainToInstance(CustomerStatusDto, raw), { forbidUnknownValues: true })
+        : [{ property: statusConflict ? 'status' : 'body' }];
 
     const safeCustomerId =
       typeof raw.customerId === 'number' && Number.isInteger(raw.customerId)

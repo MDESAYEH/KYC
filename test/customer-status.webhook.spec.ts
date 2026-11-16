@@ -178,6 +178,44 @@ describe('POST /customerStatus (real HTTP, real SQLite repositories)', () => {
       });
     });
 
+    it('accepts the V1.5 attribute-table spelling "Status" as well as "status"', async () => {
+      await pending('K-S1');
+      const upper = { ...callback('K-S1', 'CUSTOMER'), Status: 'CUSTOMER' } as Record<
+        string,
+        unknown
+      >;
+      delete upper.status;
+      const res = await post(upper as never);
+      expect(res.status).toBe(200);
+      expect(res.json).toMatchObject({ result: 'APPLIED' });
+      expect(await cases.findByKycRefNo('K-S1')).toMatchObject({ finalStatus: 'CUSTOMER' });
+      expect((await audit('K-S1'))[0]).toMatchObject({ incomingStatus: 'CUSTOMER' });
+    });
+
+    it('accepts both spellings when they carry the same value', async () => {
+      await pending('K-S2');
+      const res = await post({ ...callback('K-S2', 'BLOCKED'), Status: 'BLOCKED' } as never);
+      expect(res.status).toBe(200);
+      expect(await cases.findByKycRefNo('K-S2')).toMatchObject({ finalStatus: 'BLOCKED' });
+    });
+
+    it('rejects "status" and "Status" with different values as malformed and changes nothing', async () => {
+      await pending('K-S3');
+      const before = await allCases();
+      const res = await post({ ...callback('K-S3', 'CUSTOMER'), Status: 'BLOCKED' } as never);
+      expect(res.status).toBe(400);
+      expect(res.json).toMatchObject({ result: 'INVALID' });
+      expect(await allCases()).toEqual(before);
+      expect(updater.calls).toHaveLength(0);
+      expect((await audit('K-S3'))[0]).toMatchObject({ processingResult: 'INVALID' });
+    });
+
+    it('a lone invalid "Status" value is still rejected', async () => {
+      await pending('K-S4');
+      const res = await post({ Status: 'PENDING', systemId: 'K-S4' } as never);
+      expect(res.status).toBe(400);
+    });
+
     it('accepts a null customerId and ignores unknown extra fields', async () => {
       await pending('K-3');
       const res = await post(callback('K-3', 'CUSTOMER', { customerId: null, surprise: 'x' }));
