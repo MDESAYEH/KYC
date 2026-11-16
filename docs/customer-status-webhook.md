@@ -22,6 +22,7 @@ REIS ---- POST /customerStatus ---->  Bank Integration API
 **CONFIRMED**
 - Endpoint `POST /customerStatus`, JSON body.
 - Payload sample: `{"status":"BLOCKED","systemId":"2378287","customerId":217489,"systemName":"Flexcube","ServiceType":"CUSTOMER_STATUS"}`.
+- Status field spelling: V1.5 names it `Status` in the attribute table, the sample uses `status`. Both are accepted; `Status` is used only when `status` is absent, and both present with different values is rejected as malformed.
 - Final statuses are only `CUSTOMER` and `BLOCKED` (never CLEAN / PENDING / REJECT).
 - Correlation: callback `systemId` = our KYC_REF_NO (= `kyc_case.reis_system_id`).
 - HTTP 200 after valid processing, including a safe identical duplicate.

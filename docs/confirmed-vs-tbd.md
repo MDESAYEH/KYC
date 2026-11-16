@@ -16,7 +16,7 @@ Important distinction: a **REIS contract** item can be CONFIRMED while the **FLE
 | Forms | Individual 1/PP, Corporate 2/PM, Individual relation 3/PP, Corporate relation 4/PM | `REIS_FORM` |
 | Field types | `source_income_individual` string, `m_income` **number**, `source_income_organization` string, `fin_info` **number** | `ReisIndividualRequest`, `ReisCorporateRequest` |
 | Date format | `cus_birth_date`, `issue_date`, `expiry_date`, `valid_until` must be `YYYY-MM-DD` (strict, real calendar dates). Enforced on the REIS outbound side | `reis/reis-date.ts` |
-| Individual relation DTO | Required: systemName, systemId, formId, entity_type, relationshipId, first_name, last_name, cus_birth_date, nationality, citizenship. Optional: birth_place, tin, nid, issue_date, valid_until, issue_place | `ReisIndividualRelationEntry` / `ReisIndividualRelationItems` |
+| Individual relation DTO (V1.5) | Required: systemName, systemId, formId, entity_type, relationshipId, first_name, last_name, cus_birth_date, nationality, citizenship, nid, issue_date, valid_until. Optional: birth_place, tin, national_id, issue_place | `ReisIndividualRelationEntry` / `ReisIndividualRelationItems` |
 | Individual relation relationshipId (formId 3) | **Only** 1 PARENT, 2 SPOUSE, 3 CHILD, 4 LEGALGUARD, 5 EMERGENCY, 6 COOWNER, 7 AUTHORIZED; ids 8-15 are rejected | `ReisIndividualRelationshipId`, transformer |
 | Corporate relation DTO | Required: systemName, systemId, formId, entity_type, relationshipId, business_name, nationality. Optional: trade_no | `ReisCorporateRelationEntry` / `ReisCorporateRelationItems` |
 | Organization relation relationshipId (formId 4) | **Only** 6 COOWNER, 7 AUTHORIZED, 8 BENEFICIAR, 9 SHAREHOLDE, 10 MANAGER, 11 PARTNER, 12 OWNER, 13 EXECUTIVE, 14 CEO, 15 CFO; ids 1-5 are rejected | `ReisCorporateRelationshipId`, transformer |
@@ -63,7 +63,7 @@ Important distinction: a **REIS contract** item can be CONFIRMED while the **FLE
 | Corporate | ~~`business_name` <- `BUSINESS_NATURE`~~ **SUPERSEDED 2026-10-10** (REIS: `business_name` = legal name; FLEXCUBE will add a new text field; code not yet changed). `incorp_country` <- "Parent Company Country of Incorporation" (`PARENT_CMPNY_COUNTRY`): field named by FLEXCUBE, **semantic conflict with REIS's "entity's own country" to resolve** | `FlexcubeCorporateDto` |
 | Product | FLEXCUBE `PRODUCT_CODE`, via configurable mapping (ACCOUNT_CLASS is reference only) | `ReferenceMappingType.PRODUCT` |
 | Reference data | Configurable mappings (FLEXCUBE value -> REIS value, type, active, description); Excel values not hardcoded | `mapping/` |
-| Related persons | Separate module; Individual relations not required from FLEXCUBE now | `IRelationProvider`, `CanonicalRelatedPerson` |
+| Related persons | Corporate key persons are read from `STTM_KYC_CORP_KEYPERSONS` and sent as `relations` (see `docs/flexcube-sync.md`) | `CanonicalRelatedPerson`, `FlexcubeKycSource` |
 | Transformations | Name/code renames, Y/N -> boolean, Resident -> "1"/"2" are the integration layer's job | canonical -> REIS (Step 4) |
 | Architecture | FlexcubeCustomerRequest -> CanonicalKycCustomer -> ReisIndividual/CorporateRequest | `canonical/`, `flexcube/`, `reis/` |
 | Security | No hardcoded secrets; env config; real TLS validation; no tokens/passwords in DB or logs; masked payload logging | `config/`, `.env.example` |

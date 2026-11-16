@@ -74,7 +74,7 @@ const GOOD_INDIVIDUAL: SqlRow = {
   FUNDS_SOURCE: 'BUSN',
   TOTAL_INCOME: 3000,
   ACCOUNT_MANAGER_LOGIN: 'Test001',
-  ACCOUNT_MANAGER_EMAIL: 'samer.elazabi@aiib.ly',
+  ACCOUNT_MANAGER_EMAIL: 'amgr@example.test',
   DISTRIBUTION_CHANNEL: '00',
 };
 

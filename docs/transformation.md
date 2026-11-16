@@ -26,10 +26,11 @@ Status labels used below: **CONFIRMED** (stated by the Bank/FLEXCUBE/REIS docume
 | Relation entry: `formId`, `entity_type`, `items`, `relationshipId`, `systemName`, `systemId`; `entity_type` on the entry AND inside `items` (both preserved; do not "clean up" until REIS confirms) | CONFIRMED (Individual relation) |
 | Corporate relation entry (`formId` 4, same shape, `entity_type` `PM` in both places) | DERIVED; UAT verification pending |
 | `relations` is always present; `[]` when no confirmed relations exist | CONFIRMED |
+| Individual relation (formId 3, V1.5): `nid`, `issue_date`, `valid_until` mandatory; `national_id` optional | CONFIRMED (REIS V1.5) |
+| Names are Latin-only: `first_name`, `last_name` (customer and individual relations) and `business_name` (corporate customer and relations) accept only A-Z, a-z, space, dot, hyphen, apostrophe after trimming (REIS sanctions screening matches the same script only); the error names the field, never the value | Bank decision |
 | Relations are part of the main request, never separate calls | CONFIRMED |
-| `relationshipId` per form: **formId 3 (Individual Relation) accepts only 1-7** (PARENT, SPOUSE, CHILD, LEGALGUARD, EMERGENCY, COOWNER, AUTHORIZED); **formId 4 (Organization Relation) accepts only 6-15** (COOWNER, AUTHORIZED, BENEFICIAR, SHAREHOLDE, MANAGER, PARTNER, OWNER, EXECUTIVE, CEO, CFO). So formId 3 rejects 8-15 and formId 4 rejects 1-5 | CONFIRMED (REIS V1.2) |
-| **Additional semantic compatibility** for some organization-relation types (V1.2 also says e.g. AUTHORIZED / MANAGER / EXECUTIVE / CEO / CFO apply to individual parties only; the wording is ambiguous) | **TBD - needs REIS confirmation.** NOT enforced and NOT invented: the transformer checks only the per-form id membership above |
-| FLEXCUBE source/population of Corporate relations | TBD (`IRelationProvider`, no implementation). Individual relations are not required from FLEXCUBE now |
+| `relationshipId` per form (V1.4 / V1.5): **formId 3 (Individual Relation) accepts 1-8** (AUTHORIZED, BENEFICIAR, CEO, CFO, COOWNER, MANAGER, OWNER, SHAREHOLDE); **formId 4 (Organization Relation) accepts only 2, 5, 7, 8** (BENEFICIAR, COOWNER, OWNER, SHAREHOLDE) | CONFIRMED (REIS V1.4 / V1.5) |
+| FLEXCUBE source of corporate relations | `STTM_KYC_CORP_KEYPERSONS` + `_CUSTOM`, read by `FlexcubeKycSource` (see `docs/flexcube-sync.md`); the related-party systemId is `<company KYC_REF_NO>-<KYC_ID>` | PROVISIONAL (UAT1 verification pending) |
 
 ## FLEXCUBE -> canonical (`FlexcubeToCanonicalMapper`)
 | FLEXCUBE | Canonical | Rule | Status |
