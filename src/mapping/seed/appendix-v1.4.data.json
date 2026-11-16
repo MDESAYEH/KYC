@@ -1,0 +1,2096 @@
+{
+  "source": "AIIB_KYC_Appendix.xlsx (Reis V1.4, 02/11/2026)",
+  "rule": "FLEXCUBE codes are the agreed Reis codes (identity mapping).",
+  "mappings": {
+    "NATIONALITY": [
+      {
+        "flexcubeValue": "AF",
+        "reisValue": "AF",
+        "description": "Afghanistan"
+      },
+      {
+        "flexcubeValue": "AX",
+        "reisValue": "AX",
+        "description": "Åland Islands"
+      },
+      {
+        "flexcubeValue": "AL",
+        "reisValue": "AL",
+        "description": "Albania"
+      },
+      {
+        "flexcubeValue": "DZ",
+        "reisValue": "DZ",
+        "description": "Algeria"
+      },
+      {
+        "flexcubeValue": "AS",
+        "reisValue": "AS",
+        "description": "American Samoa"
+      },
+      {
+        "flexcubeValue": "AD",
+        "reisValue": "AD",
+        "description": "Andorra"
+      },
+      {
+        "flexcubeValue": "AO",
+        "reisValue": "AO",
+        "description": "Angola"
+      },
+      {
+        "flexcubeValue": "AI",
+        "reisValue": "AI",
+        "description": "Anguilla"
+      },
+      {
+        "flexcubeValue": "AQ",
+        "reisValue": "AQ",
+        "description": "Antarctica"
+      },
+      {
+        "flexcubeValue": "AG",
+        "reisValue": "AG",
+        "description": "Antigua and Barbuda"
+      },
+      {
+        "flexcubeValue": "AR",
+        "reisValue": "AR",
+        "description": "Argentina"
+      },
+      {
+        "flexcubeValue": "AM",
+        "reisValue": "AM",
+        "description": "Armenia"
+      },
+      {
+        "flexcubeValue": "AW",
+        "reisValue": "AW",
+        "description": "Aruba"
+      },
+      {
+        "flexcubeValue": "AU",
+        "reisValue": "AU",
+        "description": "Australia"
+      },
+      {
+        "flexcubeValue": "AT",
+        "reisValue": "AT",
+        "description": "Austria"
+      },
+      {
+        "flexcubeValue": "AZ",
+        "reisValue": "AZ",
+        "description": "Azerbaijan"
+      },
+      {
+        "flexcubeValue": "BS",
+        "reisValue": "BS",
+        "description": "Bahamas"
+      },
+      {
+        "flexcubeValue": "BH",
+        "reisValue": "BH",
+        "description": "Bahrain"
+      },
+      {
+        "flexcubeValue": "BD",
+        "reisValue": "BD",
+        "description": "Bangladesh"
+      },
+      {
+        "flexcubeValue": "BB",
+        "reisValue": "BB",
+        "description": "Barbados"
+      },
+      {
+        "flexcubeValue": "BY",
+        "reisValue": "BY",
+        "description": "Belarus"
+      },
+      {
+        "flexcubeValue": "BE",
+        "reisValue": "BE",
+        "description": "Belgium"
+      },
+      {
+        "flexcubeValue": "BZ",
+        "reisValue": "BZ",
+        "description": "Belize"
+      },
+      {
+        "flexcubeValue": "BJ",
+        "reisValue": "BJ",
+        "description": "Benin"
+      },
+      {
+        "flexcubeValue": "BM",
+        "reisValue": "BM",
+        "description": "Bermuda"
+      },
+      {
+        "flexcubeValue": "BT",
+        "reisValue": "BT",
+        "description": "Bhutan"
+      },
+      {
+        "flexcubeValue": "BO",
+        "reisValue": "BO",
+        "description": "Bolivia"
+      },
+      {
+        "flexcubeValue": "BQ",
+        "reisValue": "BQ",
+        "description": "Bonaire, Sint Eustatius and Saba"
+      },
+      {
+        "flexcubeValue": "BA",
+        "reisValue": "BA",
+        "description": "Bosnia and Herzegovina"
+      },
+      {
+        "flexcubeValue": "BW",
+        "reisValue": "BW",
+        "description": "Botswana"
+      },
+      {
+        "flexcubeValue": "BV",
+        "reisValue": "BV",
+        "description": "Bouvet Island"
+      },
+      {
+        "flexcubeValue": "BR",
+        "reisValue": "BR",
+        "description": "Brazil"
+      },
+      {
+        "flexcubeValue": "BN",
+        "reisValue": "BN",
+        "description": "Brunei"
+      },
+      {
+        "flexcubeValue": "BG",
+        "reisValue": "BG",
+        "description": "Bulgaria"
+      },
+      {
+        "flexcubeValue": "BF",
+        "reisValue": "BF",
+        "description": "Burkina Faso"
+      },
+      {
+        "flexcubeValue": "BI",
+        "reisValue": "BI",
+        "description": "Burundi"
+      },
+      {
+        "flexcubeValue": "CV",
+        "reisValue": "CV",
+        "description": "Cabo Verde"
+      },
+      {
+        "flexcubeValue": "KH",
+        "reisValue": "KH",
+        "description": "Cambodia"
+      },
+      {
+        "flexcubeValue": "CM",
+        "reisValue": "CM",
+        "description": "Cameroon"
+      },
+      {
+        "flexcubeValue": "CA",
+        "reisValue": "CA",
+        "description": "Canada"
+      },
+      {
+        "flexcubeValue": "KY",
+        "reisValue": "KY",
+        "description": "Cayman Islands"
+      },
+      {
+        "flexcubeValue": "CF",
+        "reisValue": "CF",
+        "description": "Central African Republic"
+      },
+      {
+        "flexcubeValue": "TD",
+        "reisValue": "TD",
+        "description": "Chad"
+      },
+      {
+        "flexcubeValue": "CL",
+        "reisValue": "CL",
+        "description": "Chile"
+      },
+      {
+        "flexcubeValue": "CN",
+        "reisValue": "CN",
+        "description": "China"
+      },
+      {
+        "flexcubeValue": "CX",
+        "reisValue": "CX",
+        "description": "Christmas Island"
+      },
+      {
+        "flexcubeValue": "CC",
+        "reisValue": "CC",
+        "description": "Cocos (Keeling) Islands"
+      },
+      {
+        "flexcubeValue": "CO",
+        "reisValue": "CO",
+        "description": "Colombia"
+      },
+      {
+        "flexcubeValue": "KM",
+        "reisValue": "KM",
+        "description": "Comoros"
+      },
+      {
+        "flexcubeValue": "CG",
+        "reisValue": "CG",
+        "description": "Congo (Brazzaville)"
+      },
+      {
+        "flexcubeValue": "CD",
+        "reisValue": "CD",
+        "description": "Congo (Kinshasa)"
+      },
+      {
+        "flexcubeValue": "CK",
+        "reisValue": "CK",
+        "description": "Cook Islands"
+      },
+      {
+        "flexcubeValue": "CR",
+        "reisValue": "CR",
+        "description": "Costa Rica"
+      },
+      {
+        "flexcubeValue": "CI",
+        "reisValue": "CI",
+        "description": "Côte d’Ivoire"
+      },
+      {
+        "flexcubeValue": "HR",
+        "reisValue": "HR",
+        "description": "Croatia"
+      },
+      {
+        "flexcubeValue": "CU",
+        "reisValue": "CU",
+        "description": "Cuba"
+      },
+      {
+        "flexcubeValue": "CW",
+        "reisValue": "CW",
+        "description": "Curaçao"
+      },
+      {
+        "flexcubeValue": "CY",
+        "reisValue": "CY",
+        "description": "Cyprus"
+      },
+      {
+        "flexcubeValue": "CZ",
+        "reisValue": "CZ",
+        "description": "Czech Republic"
+      },
+      {
+        "flexcubeValue": "DK",
+        "reisValue": "DK",
+        "description": "Denmark"
+      },
+      {
+        "flexcubeValue": "DJ",
+        "reisValue": "DJ",
+        "description": "Djibouti"
+      },
+      {
+        "flexcubeValue": "DM",
+        "reisValue": "DM",
+        "description": "Dominica"
+      },
+      {
+        "flexcubeValue": "DO",
+        "reisValue": "DO",
+        "description": "Dominican Republic"
+      },
+      {
+        "flexcubeValue": "EC",
+        "reisValue": "EC",
+        "description": "Ecuador"
+      },
+      {
+        "flexcubeValue": "EG",
+        "reisValue": "EG",
+        "description": "Egypt"
+      },
+      {
+        "flexcubeValue": "SV",
+        "reisValue": "SV",
+        "description": "El Salvador"
+      },
+      {
+        "flexcubeValue": "GQ",
+        "reisValue": "GQ",
+        "description": "Equatorial Guinea"
+      },
+      {
+        "flexcubeValue": "ER",
+        "reisValue": "ER",
+        "description": "Eritrea"
+      },
+      {
+        "flexcubeValue": "EE",
+        "reisValue": "EE",
+        "description": "Estonia"
+      },
+      {
+        "flexcubeValue": "ET",
+        "reisValue": "ET",
+        "description": "Ethiopia"
+      },
+      {
+        "flexcubeValue": "FK",
+        "reisValue": "FK",
+        "description": "Falkland Islands"
+      },
+      {
+        "flexcubeValue": "FO",
+        "reisValue": "FO",
+        "description": "Faroe Islands"
+      },
+      {
+        "flexcubeValue": "FJ",
+        "reisValue": "FJ",
+        "description": "Fiji"
+      },
+      {
+        "flexcubeValue": "FI",
+        "reisValue": "FI",
+        "description": "Finland"
+      },
+      {
+        "flexcubeValue": "FR",
+        "reisValue": "FR",
+        "description": "France"
+      },
+      {
+        "flexcubeValue": "GF",
+        "reisValue": "GF",
+        "description": "French Guiana"
+      },
+      {
+        "flexcubeValue": "PF",
+        "reisValue": "PF",
+        "description": "French Polynesia"
+      },
+      {
+        "flexcubeValue": "TF",
+        "reisValue": "TF",
+        "description": "French Southern Territories"
+      },
+      {
+        "flexcubeValue": "GA",
+        "reisValue": "GA",
+        "description": "Gabon"
+      },
+      {
+        "flexcubeValue": "GM",
+        "reisValue": "GM",
+        "description": "Gambia"
+      },
+      {
+        "flexcubeValue": "GE",
+        "reisValue": "GE",
+        "description": "Georgia"
+      },
+      {
+        "flexcubeValue": "DE",
+        "reisValue": "DE",
+        "description": "Germany"
+      },
+      {
+        "flexcubeValue": "GH",
+        "reisValue": "GH",
+        "description": "Ghana"
+      },
+      {
+        "flexcubeValue": "GI",
+        "reisValue": "GI",
+        "description": "Gibraltar"
+      },
+      {
+        "flexcubeValue": "GR",
+        "reisValue": "GR",
+        "description": "Greece"
+      },
+      {
+        "flexcubeValue": "GL",
+        "reisValue": "GL",
+        "description": "Greenland"
+      },
+      {
+        "flexcubeValue": "GD",
+        "reisValue": "GD",
+        "description": "Grenada"
+      },
+      {
+        "flexcubeValue": "GP",
+        "reisValue": "GP",
+        "description": "Guadeloupe"
+      },
+      {
+        "flexcubeValue": "GU",
+        "reisValue": "GU",
+        "description": "Guam"
+      },
+      {
+        "flexcubeValue": "GT",
+        "reisValue": "GT",
+        "description": "Guatemala"
+      },
+      {
+        "flexcubeValue": "GG",
+        "reisValue": "GG",
+        "description": "Guernsey"
+      },
+      {
+        "flexcubeValue": "GN",
+        "reisValue": "GN",
+        "description": "Guinea"
+      },
+      {
+        "flexcubeValue": "GW",
+        "reisValue": "GW",
+        "description": "Guinea-Bissau"
+      },
+      {
+        "flexcubeValue": "GY",
+        "reisValue": "GY",
+        "description": "Guyana"
+      },
+      {
+        "flexcubeValue": "HT",
+        "reisValue": "HT",
+        "description": "Haiti"
+      },
+      {
+        "flexcubeValue": "HM",
+        "reisValue": "HM",
+        "description": "Heard Island and McDonald Islands"
+      },
+      {
+        "flexcubeValue": "KI",
+        "reisValue": "KI",
+        "description": "Kiribati"
+      },
+      {
+        "flexcubeValue": "VA",
+        "reisValue": "VA",
+        "description": "Holy See"
+      },
+      {
+        "flexcubeValue": "HN",
+        "reisValue": "HN",
+        "description": "Honduras"
+      },
+      {
+        "flexcubeValue": "HK",
+        "reisValue": "HK",
+        "description": "Hong Kong"
+      },
+      {
+        "flexcubeValue": "HU",
+        "reisValue": "HU",
+        "description": "Hungary"
+      },
+      {
+        "flexcubeValue": "IS",
+        "reisValue": "IS",
+        "description": "Iceland"
+      },
+      {
+        "flexcubeValue": "IN",
+        "reisValue": "IN",
+        "description": "India"
+      },
+      {
+        "flexcubeValue": "ID",
+        "reisValue": "ID",
+        "description": "Indonesia"
+      },
+      {
+        "flexcubeValue": "IR",
+        "reisValue": "IR",
+        "description": "Iran"
+      },
+      {
+        "flexcubeValue": "IQ",
+        "reisValue": "IQ",
+        "description": "Iraq"
+      },
+      {
+        "flexcubeValue": "IE",
+        "reisValue": "IE",
+        "description": "Ireland"
+      },
+      {
+        "flexcubeValue": "IT",
+        "reisValue": "IT",
+        "description": "Italy"
+      },
+      {
+        "flexcubeValue": "JM",
+        "reisValue": "JM",
+        "description": "Jamaica"
+      },
+      {
+        "flexcubeValue": "JP",
+        "reisValue": "JP",
+        "description": "Japan"
+      },
+      {
+        "flexcubeValue": "IM",
+        "reisValue": "IM",
+        "description": "Isle of Man"
+      },
+      {
+        "flexcubeValue": "JE",
+        "reisValue": "JE",
+        "description": "Jersey"
+      },
+      {
+        "flexcubeValue": "JO",
+        "reisValue": "JO",
+        "description": "Jordan"
+      },
+      {
+        "flexcubeValue": "KZ",
+        "reisValue": "KZ",
+        "description": "Kazakhstan"
+      },
+      {
+        "flexcubeValue": "KE",
+        "reisValue": "KE",
+        "description": "Kenya"
+      },
+      {
+        "flexcubeValue": "KP",
+        "reisValue": "KP",
+        "description": "North Korea"
+      },
+      {
+        "flexcubeValue": "KR",
+        "reisValue": "KR",
+        "description": "South Korea"
+      },
+      {
+        "flexcubeValue": "KW",
+        "reisValue": "KW",
+        "description": "Kuwait"
+      },
+      {
+        "flexcubeValue": "KG",
+        "reisValue": "KG",
+        "description": "Kyrgyzstan"
+      },
+      {
+        "flexcubeValue": "LA",
+        "reisValue": "LA",
+        "description": "Laos"
+      },
+      {
+        "flexcubeValue": "LV",
+        "reisValue": "LV",
+        "description": "Latvia"
+      },
+      {
+        "flexcubeValue": "LB",
+        "reisValue": "LB",
+        "description": "Lebanon"
+      },
+      {
+        "flexcubeValue": "LS",
+        "reisValue": "LS",
+        "description": "Lesotho"
+      },
+      {
+        "flexcubeValue": "LR",
+        "reisValue": "LR",
+        "description": "Liberia"
+      },
+      {
+        "flexcubeValue": "LY",
+        "reisValue": "LY",
+        "description": "Libya"
+      },
+      {
+        "flexcubeValue": "LI",
+        "reisValue": "LI",
+        "description": "Liechtenstein"
+      },
+      {
+        "flexcubeValue": "LT",
+        "reisValue": "LT",
+        "description": "Lithuania"
+      },
+      {
+        "flexcubeValue": "LU",
+        "reisValue": "LU",
+        "description": "Luxembourg"
+      },
+      {
+        "flexcubeValue": "MO",
+        "reisValue": "MO",
+        "description": "Macau"
+      },
+      {
+        "flexcubeValue": "MK",
+        "reisValue": "MK",
+        "description": "North Macedonia"
+      },
+      {
+        "flexcubeValue": "MG",
+        "reisValue": "MG",
+        "description": "Madagascar"
+      },
+      {
+        "flexcubeValue": "MW",
+        "reisValue": "MW",
+        "description": "Malawi"
+      },
+      {
+        "flexcubeValue": "MY",
+        "reisValue": "MY",
+        "description": "Malaysia"
+      },
+      {
+        "flexcubeValue": "MV",
+        "reisValue": "MV",
+        "description": "Maldives"
+      },
+      {
+        "flexcubeValue": "ML",
+        "reisValue": "ML",
+        "description": "Mali"
+      },
+      {
+        "flexcubeValue": "MT",
+        "reisValue": "MT",
+        "description": "Malta"
+      },
+      {
+        "flexcubeValue": "MH",
+        "reisValue": "MH",
+        "description": "Marshall Islands"
+      },
+      {
+        "flexcubeValue": "MQ",
+        "reisValue": "MQ",
+        "description": "Martinique"
+      },
+      {
+        "flexcubeValue": "MR",
+        "reisValue": "MR",
+        "description": "Mauritania"
+      },
+      {
+        "flexcubeValue": "MU",
+        "reisValue": "MU",
+        "description": "Mauritius"
+      },
+      {
+        "flexcubeValue": "YT",
+        "reisValue": "YT",
+        "description": "Mayotte"
+      },
+      {
+        "flexcubeValue": "MX",
+        "reisValue": "MX",
+        "description": "Mexico"
+      },
+      {
+        "flexcubeValue": "FM",
+        "reisValue": "FM",
+        "description": "Micronesia"
+      },
+      {
+        "flexcubeValue": "MD",
+        "reisValue": "MD",
+        "description": "Moldova"
+      },
+      {
+        "flexcubeValue": "MC",
+        "reisValue": "MC",
+        "description": "Monaco"
+      },
+      {
+        "flexcubeValue": "MN",
+        "reisValue": "MN",
+        "description": "Mongolia"
+      },
+      {
+        "flexcubeValue": "ME",
+        "reisValue": "ME",
+        "description": "Montenegro"
+      },
+      {
+        "flexcubeValue": "MS",
+        "reisValue": "MS",
+        "description": "Montserrat"
+      },
+      {
+        "flexcubeValue": "MA",
+        "reisValue": "MA",
+        "description": "Morocco"
+      },
+      {
+        "flexcubeValue": "MZ",
+        "reisValue": "MZ",
+        "description": "Mozambique"
+      },
+      {
+        "flexcubeValue": "MM",
+        "reisValue": "MM",
+        "description": "Myanmar"
+      },
+      {
+        "flexcubeValue": "NA",
+        "reisValue": "NA",
+        "description": "Namibia"
+      },
+      {
+        "flexcubeValue": "NR",
+        "reisValue": "NR",
+        "description": "Nauru"
+      },
+      {
+        "flexcubeValue": "NP",
+        "reisValue": "NP",
+        "description": "Nepal"
+      },
+      {
+        "flexcubeValue": "NL",
+        "reisValue": "NL",
+        "description": "Netherlands"
+      },
+      {
+        "flexcubeValue": "NC",
+        "reisValue": "NC",
+        "description": "New Caledonia"
+      },
+      {
+        "flexcubeValue": "NZ",
+        "reisValue": "NZ",
+        "description": "New Zealand"
+      },
+      {
+        "flexcubeValue": "NI",
+        "reisValue": "NI",
+        "description": "Nicaragua"
+      },
+      {
+        "flexcubeValue": "NE",
+        "reisValue": "NE",
+        "description": "Niger"
+      },
+      {
+        "flexcubeValue": "NG",
+        "reisValue": "NG",
+        "description": "Nigeria"
+      },
+      {
+        "flexcubeValue": "NU",
+        "reisValue": "NU",
+        "description": "Niue"
+      },
+      {
+        "flexcubeValue": "NF",
+        "reisValue": "NF",
+        "description": "Norfolk Island"
+      },
+      {
+        "flexcubeValue": "MP",
+        "reisValue": "MP",
+        "description": "Northern Mariana Islands"
+      },
+      {
+        "flexcubeValue": "NO",
+        "reisValue": "NO",
+        "description": "Norway"
+      },
+      {
+        "flexcubeValue": "OM",
+        "reisValue": "OM",
+        "description": "Oman"
+      },
+      {
+        "flexcubeValue": "PK",
+        "reisValue": "PK",
+        "description": "Pakistan"
+      },
+      {
+        "flexcubeValue": "PW",
+        "reisValue": "PW",
+        "description": "Palau"
+      },
+      {
+        "flexcubeValue": "PS",
+        "reisValue": "PS",
+        "description": "Palestine"
+      },
+      {
+        "flexcubeValue": "PA",
+        "reisValue": "PA",
+        "description": "Panama"
+      },
+      {
+        "flexcubeValue": "PG",
+        "reisValue": "PG",
+        "description": "Papua New Guinea"
+      },
+      {
+        "flexcubeValue": "PY",
+        "reisValue": "PY",
+        "description": "Paraguay"
+      },
+      {
+        "flexcubeValue": "PE",
+        "reisValue": "PE",
+        "description": "Peru"
+      },
+      {
+        "flexcubeValue": "PH",
+        "reisValue": "PH",
+        "description": "Philippines"
+      },
+      {
+        "flexcubeValue": "PN",
+        "reisValue": "PN",
+        "description": "Pitcairn Islands"
+      },
+      {
+        "flexcubeValue": "PL",
+        "reisValue": "PL",
+        "description": "Poland"
+      },
+      {
+        "flexcubeValue": "PT",
+        "reisValue": "PT",
+        "description": "Portugal"
+      },
+      {
+        "flexcubeValue": "PR",
+        "reisValue": "PR",
+        "description": "Puerto Rico"
+      },
+      {
+        "flexcubeValue": "QA",
+        "reisValue": "QA",
+        "description": "Qatar"
+      },
+      {
+        "flexcubeValue": "RE",
+        "reisValue": "RE",
+        "description": "Réunion"
+      },
+      {
+        "flexcubeValue": "RO",
+        "reisValue": "RO",
+        "description": "Romania"
+      },
+      {
+        "flexcubeValue": "RU",
+        "reisValue": "RU",
+        "description": "Russia"
+      },
+      {
+        "flexcubeValue": "RW",
+        "reisValue": "RW",
+        "description": "Rwanda"
+      },
+      {
+        "flexcubeValue": "BL",
+        "reisValue": "BL",
+        "description": "Saint Barthélemy"
+      },
+      {
+        "flexcubeValue": "SH",
+        "reisValue": "SH",
+        "description": "Saint Helena"
+      },
+      {
+        "flexcubeValue": "KN",
+        "reisValue": "KN",
+        "description": "Saint Kitts and Nevis"
+      },
+      {
+        "flexcubeValue": "LC",
+        "reisValue": "LC",
+        "description": "Saint Lucia"
+      },
+      {
+        "flexcubeValue": "MF",
+        "reisValue": "MF",
+        "description": "Saint Martin (French part)"
+      },
+      {
+        "flexcubeValue": "PM",
+        "reisValue": "PM",
+        "description": "Saint Pierre and Miquelon"
+      },
+      {
+        "flexcubeValue": "VC",
+        "reisValue": "VC",
+        "description": "Saint Vincent and the Grenadines"
+      },
+      {
+        "flexcubeValue": "WS",
+        "reisValue": "WS",
+        "description": "Samoa"
+      },
+      {
+        "flexcubeValue": "SM",
+        "reisValue": "SM",
+        "description": "San Marino"
+      },
+      {
+        "flexcubeValue": "ST",
+        "reisValue": "ST",
+        "description": "São Tomé and Príncipe"
+      },
+      {
+        "flexcubeValue": "SA",
+        "reisValue": "SA",
+        "description": "Saudi Arabia"
+      },
+      {
+        "flexcubeValue": "SN",
+        "reisValue": "SN",
+        "description": "Senegal"
+      },
+      {
+        "flexcubeValue": "RS",
+        "reisValue": "RS",
+        "description": "Serbia"
+      },
+      {
+        "flexcubeValue": "SC",
+        "reisValue": "SC",
+        "description": "Seychelles"
+      },
+      {
+        "flexcubeValue": "SL",
+        "reisValue": "SL",
+        "description": "Sierra Leone"
+      },
+      {
+        "flexcubeValue": "SG",
+        "reisValue": "SG",
+        "description": "Singapore"
+      },
+      {
+        "flexcubeValue": "SX",
+        "reisValue": "SX",
+        "description": "Sint Maarten (Dutch part)"
+      },
+      {
+        "flexcubeValue": "SK",
+        "reisValue": "SK",
+        "description": "Slovakia"
+      },
+      {
+        "flexcubeValue": "SI",
+        "reisValue": "SI",
+        "description": "Slovenia"
+      },
+      {
+        "flexcubeValue": "SB",
+        "reisValue": "SB",
+        "description": "Solomon Islands"
+      },
+      {
+        "flexcubeValue": "SO",
+        "reisValue": "SO",
+        "description": "Somalia"
+      },
+      {
+        "flexcubeValue": "ZA",
+        "reisValue": "ZA",
+        "description": "South Africa"
+      },
+      {
+        "flexcubeValue": "GS",
+        "reisValue": "GS",
+        "description": "South Georgia and the South Sandwich Islands"
+      },
+      {
+        "flexcubeValue": "SS",
+        "reisValue": "SS",
+        "description": "South Sudan"
+      },
+      {
+        "flexcubeValue": "ES",
+        "reisValue": "ES",
+        "description": "Spain"
+      },
+      {
+        "flexcubeValue": "LK",
+        "reisValue": "LK",
+        "description": "Sri Lanka"
+      },
+      {
+        "flexcubeValue": "SD",
+        "reisValue": "SD",
+        "description": "Sudan"
+      },
+      {
+        "flexcubeValue": "SR",
+        "reisValue": "SR",
+        "description": "Suriname"
+      },
+      {
+        "flexcubeValue": "SJ",
+        "reisValue": "SJ",
+        "description": "Svalbard and Jan Mayen"
+      },
+      {
+        "flexcubeValue": "SZ",
+        "reisValue": "SZ",
+        "description": "Eswatini"
+      },
+      {
+        "flexcubeValue": "SE",
+        "reisValue": "SE",
+        "description": "Sweden"
+      },
+      {
+        "flexcubeValue": "CH",
+        "reisValue": "CH",
+        "description": "Switzerland"
+      },
+      {
+        "flexcubeValue": "SY",
+        "reisValue": "SY",
+        "description": "Syria"
+      },
+      {
+        "flexcubeValue": "TW",
+        "reisValue": "TW",
+        "description": "Taiwan"
+      },
+      {
+        "flexcubeValue": "TJ",
+        "reisValue": "TJ",
+        "description": "Tajikistan"
+      },
+      {
+        "flexcubeValue": "TZ",
+        "reisValue": "TZ",
+        "description": "Tanzania"
+      },
+      {
+        "flexcubeValue": "TH",
+        "reisValue": "TH",
+        "description": "Thailand"
+      },
+      {
+        "flexcubeValue": "TL",
+        "reisValue": "TL",
+        "description": "Timor-Leste"
+      },
+      {
+        "flexcubeValue": "TG",
+        "reisValue": "TG",
+        "description": "Togo"
+      },
+      {
+        "flexcubeValue": "TK",
+        "reisValue": "TK",
+        "description": "Tokelau"
+      },
+      {
+        "flexcubeValue": "TO",
+        "reisValue": "TO",
+        "description": "Tonga"
+      },
+      {
+        "flexcubeValue": "TT",
+        "reisValue": "TT",
+        "description": "Trinidad and Tobago"
+      },
+      {
+        "flexcubeValue": "TN",
+        "reisValue": "TN",
+        "description": "Tunisia"
+      },
+      {
+        "flexcubeValue": "TR",
+        "reisValue": "TR",
+        "description": "Turkey"
+      },
+      {
+        "flexcubeValue": "TM",
+        "reisValue": "TM",
+        "description": "Turkmenistan"
+      },
+      {
+        "flexcubeValue": "TC",
+        "reisValue": "TC",
+        "description": "Turks and Caicos Islands"
+      },
+      {
+        "flexcubeValue": "TV",
+        "reisValue": "TV",
+        "description": "Tuvalu"
+      },
+      {
+        "flexcubeValue": "UG",
+        "reisValue": "UG",
+        "description": "Uganda"
+      },
+      {
+        "flexcubeValue": "UA",
+        "reisValue": "UA",
+        "description": "Ukraine"
+      },
+      {
+        "flexcubeValue": "AE",
+        "reisValue": "AE",
+        "description": "United Arab Emirates"
+      },
+      {
+        "flexcubeValue": "GB",
+        "reisValue": "GB",
+        "description": "United Kingdom"
+      },
+      {
+        "flexcubeValue": "UM",
+        "reisValue": "UM",
+        "description": "United States Minor Outlying Islands"
+      },
+      {
+        "flexcubeValue": "US",
+        "reisValue": "US",
+        "description": "United States"
+      },
+      {
+        "flexcubeValue": "UY",
+        "reisValue": "UY",
+        "description": "Uruguay"
+      },
+      {
+        "flexcubeValue": "UZ",
+        "reisValue": "UZ",
+        "description": "Uzbekistan"
+      },
+      {
+        "flexcubeValue": "VU",
+        "reisValue": "VU",
+        "description": "Vanuatu"
+      },
+      {
+        "flexcubeValue": "VE",
+        "reisValue": "VE",
+        "description": "Venezuela"
+      },
+      {
+        "flexcubeValue": "VN",
+        "reisValue": "VN",
+        "description": "Vietnam"
+      },
+      {
+        "flexcubeValue": "VG",
+        "reisValue": "VG",
+        "description": "British Virgin Islands"
+      },
+      {
+        "flexcubeValue": "VI",
+        "reisValue": "VI",
+        "description": "U.S. Virgin Islands"
+      },
+      {
+        "flexcubeValue": "WF",
+        "reisValue": "WF",
+        "description": "Wallis and Futuna"
+      },
+      {
+        "flexcubeValue": "EH",
+        "reisValue": "EH",
+        "description": "Western Sahara"
+      },
+      {
+        "flexcubeValue": "YE",
+        "reisValue": "YE",
+        "description": "Yemen"
+      },
+      {
+        "flexcubeValue": "ZM",
+        "reisValue": "ZM",
+        "description": "Zambia"
+      },
+      {
+        "flexcubeValue": "ZW",
+        "reisValue": "ZW",
+        "description": "Zimbabwe"
+      }
+    ],
+    "PROFESSION": [
+      {
+        "flexcubeValue": "BUSI",
+        "reisValue": "BUSI",
+        "description": "رجل أعمال"
+      },
+      {
+        "flexcubeValue": "FREE",
+        "reisValue": "FREE",
+        "description": "عمل حر"
+      },
+      {
+        "flexcubeValue": "RETI",
+        "reisValue": "RETI",
+        "description": "متقاعد"
+      },
+      {
+        "flexcubeValue": "STSE",
+        "reisValue": "STSE",
+        "description": "موظف دولة"
+      },
+      {
+        "flexcubeValue": "PRSE",
+        "reisValue": "PRSE",
+        "description": "موظف قطاع خاص"
+      },
+      {
+        "flexcubeValue": "BANE",
+        "reisValue": "BANE",
+        "description": "موظف مصرف"
+      },
+      {
+        "flexcubeValue": "PPFE",
+        "reisValue": "PPFE",
+        "description": "سياسي / شخصية عامة"
+      }
+    ],
+    "ACCOUNT_PURPOSE_INDIVIDUAL": [
+      {
+        "flexcubeValue": "BUSN",
+        "reisValue": "BUSN",
+        "description": "أعمال تجارية"
+      },
+      {
+        "flexcubeValue": "COMP",
+        "reisValue": "COMP",
+        "description": "هبات أو ميراث"
+      },
+      {
+        "flexcubeValue": "INCM",
+        "reisValue": "INCM",
+        "description": "دخل من الخارج"
+      },
+      {
+        "flexcubeValue": "INVS",
+        "reisValue": "INVS",
+        "description": "استثمارات"
+      },
+      {
+        "flexcubeValue": "JOBS",
+        "reisValue": "JOBS",
+        "description": "راتب وظيفي"
+      },
+      {
+        "flexcubeValue": "PENS",
+        "reisValue": "PENS",
+        "description": "معاشات أو تعويضات"
+      },
+      {
+        "flexcubeValue": "PRSA",
+        "reisValue": "PRSA",
+        "description": "مدخرات شخصية"
+      }
+    ],
+    "ACCOUNT_PURPOSE_CORPORATE": [
+      {
+        "flexcubeValue": "COMM",
+        "reisValue": "COMM",
+        "description": "تجاري"
+      },
+      {
+        "flexcubeValue": "PUEN",
+        "reisValue": "PUEN",
+        "description": "جهات عامة"
+      },
+      {
+        "flexcubeValue": "SERV",
+        "reisValue": "SERV",
+        "description": "خدمي"
+      },
+      {
+        "flexcubeValue": "NOPO",
+        "reisValue": "NOPO",
+        "description": "مؤسسات غير ربحية"
+      },
+      {
+        "flexcubeValue": "PRIS",
+        "reisValue": "PRIS",
+        "description": "قطاع خاص"
+      }
+    ],
+    "PRODUCT": [
+      {
+        "flexcubeValue": "IST1",
+        "reisValue": "IST1",
+        "description": "ذمم الاستصناع"
+      },
+      {
+        "flexcubeValue": "MRB1",
+        "reisValue": "MRB1",
+        "description": "مرابحة للأمر بالشراء"
+      },
+      {
+        "flexcubeValue": "MRB2",
+        "reisValue": "MRB2",
+        "description": "مرابحة للأمر بالشراء"
+      },
+      {
+        "flexcubeValue": "MRT1",
+        "reisValue": "MRT1",
+        "description": "مرابحة للأمر بالشراء"
+      },
+      {
+        "flexcubeValue": "SF01",
+        "reisValue": "SF01",
+        "description": "قرض حسن (موظفي مصرف)"
+      },
+      {
+        "flexcubeValue": "AFIC",
+        "reisValue": "AFIC",
+        "description": "أراضي"
+      },
+      {
+        "flexcubeValue": "AFSC",
+        "reisValue": "AFSC",
+        "description": "Vaults and Safes"
+      },
+      {
+        "flexcubeValue": "APOC",
+        "reisValue": "APOC",
+        "description": "Network"
+      },
+      {
+        "flexcubeValue": "BULD",
+        "reisValue": "BULD",
+        "description": "Buildings"
+      },
+      {
+        "flexcubeValue": "COMP",
+        "reisValue": "COMP",
+        "description": "أجهزة كمبيوتر"
+      },
+      {
+        "flexcubeValue": "EQUP",
+        "reisValue": "EQUP",
+        "description": "معدات"
+      },
+      {
+        "flexcubeValue": "FURN",
+        "reisValue": "FURN",
+        "description": "أثاث"
+      },
+      {
+        "flexcubeValue": "LEAS",
+        "reisValue": "LEAS",
+        "description": "Building Leasing and Maintanence"
+      },
+      {
+        "flexcubeValue": "PROG",
+        "reisValue": "PROG",
+        "description": "PROGRAMS"
+      },
+      {
+        "flexcubeValue": "TRNS",
+        "reisValue": "TRNS",
+        "description": "وسائل نقل"
+      },
+      {
+        "flexcubeValue": "FX01",
+        "reisValue": "FX01",
+        "description": "FX Spot Product"
+      },
+      {
+        "flexcubeValue": "FXCU",
+        "reisValue": "FXCU",
+        "description": "FX Spot Product for Customers"
+      },
+      {
+        "flexcubeValue": "BC01",
+        "reisValue": "BC01",
+        "description": "Export"
+      },
+      {
+        "flexcubeValue": "BC02",
+        "reisValue": "BC02",
+        "description": "IMPORT"
+      },
+      {
+        "flexcubeValue": "BC03",
+        "reisValue": "BC03",
+        "description": "IMPORT"
+      },
+      {
+        "flexcubeValue": "AMCC",
+        "reisValue": "AMCC",
+        "description": "ACCOUNT MANAGMENT CHG CORP"
+      },
+      {
+        "flexcubeValue": "AMCI",
+        "reisValue": "AMCI",
+        "description": "ACCOUNT MANAGMENT CHG INDIVIDUALS"
+      },
+      {
+        "flexcubeValue": "ATMC",
+        "reisValue": "ATMC",
+        "description": "Issuance of ATM Card Charges"
+      },
+      {
+        "flexcubeValue": "DORR",
+        "reisValue": "DORR",
+        "description": "DORMANT CHARGE"
+      },
+      {
+        "flexcubeValue": "IPDC",
+        "reisValue": "IPDC",
+        "description": "Mudarabah Corporate"
+      },
+      {
+        "flexcubeValue": "IPDS",
+        "reisValue": "IPDS",
+        "description": "Mudarabah Individuals"
+      },
+      {
+        "flexcubeValue": "IPDX",
+        "reisValue": "IPDX",
+        "description": "Mudarabah Individuals"
+      },
+      {
+        "flexcubeValue": "OPNC",
+        "reisValue": "OPNC",
+        "description": "عمولة فتح حساب - شركات ومؤوسسات/ Opening account charge"
+      },
+      {
+        "flexcubeValue": "OPNI",
+        "reisValue": "OPNI",
+        "description": "عمولة فتح حساب - أفراد - charge account opening"
+      },
+      {
+        "flexcubeValue": "LC01",
+        "reisValue": "LC01",
+        "description": "اعتماد استيراد خارجى غير دوار بالاطلاع"
+      },
+      {
+        "flexcubeValue": "LC03",
+        "reisValue": "LC03",
+        "description": "اعتماد استيراد محلي غير دوار بالاطلاع"
+      },
+      {
+        "flexcubeValue": "LC40",
+        "reisValue": "LC40",
+        "description": "اعتماد تصديرمحلي"
+      },
+      {
+        "flexcubeValue": "LC51",
+        "reisValue": "LC51",
+        "description": "اعتماد تصدير خارجى  دوار بالاطلاع"
+      },
+      {
+        "flexcubeValue": "LC52",
+        "reisValue": "LC52",
+        "description": "اعتماد محلي- تصدير"
+      },
+      {
+        "flexcubeValue": "LCMF",
+        "reisValue": "LCMF",
+        "description": "اعتماد استيراد خارجى غير دوار بالاطلاع"
+      },
+      {
+        "flexcubeValue": "LG01",
+        "reisValue": "LG01",
+        "description": "خطاب ضمان محلية"
+      },
+      {
+        "flexcubeValue": "LG03",
+        "reisValue": "LG03",
+        "description": "shipping gurantee"
+      },
+      {
+        "flexcubeValue": "LG04",
+        "reisValue": "LG04",
+        "description": "اصدار خطاب ضمان خارجي"
+      },
+      {
+        "flexcubeValue": "LIRG",
+        "reisValue": "LIRG",
+        "description": "حجز طلب اعتماد مستندي لغرض موافقة مصرف ليبيا"
+      },
+      {
+        "flexcubeValue": "TFR1",
+        "reisValue": "TFR1",
+        "description": "طلب حجز حوالة  خارجية"
+      },
+      {
+        "flexcubeValue": "CDSC",
+        "reisValue": "CDSC",
+        "description": "CERTIFICATE OF DEPOSIT (BORROWING)"
+      },
+      {
+        "flexcubeValue": "CDSX",
+        "reisValue": "CDSX",
+        "description": "CERTIFICATE OF DEPOSIT"
+      },
+      {
+        "flexcubeValue": "MMPB",
+        "reisValue": "MMPB",
+        "description": "MM COMMODITY MURABAHA (Borrowing)"
+      },
+      {
+        "flexcubeValue": "MMPC",
+        "reisValue": "MMPC",
+        "description": "MM COMMODITY MURABAHA"
+      },
+      {
+        "flexcubeValue": "MMPF",
+        "reisValue": "MMPF",
+        "description": "MM WAKALA INVESTMENT"
+      },
+      {
+        "flexcubeValue": "MMPX",
+        "reisValue": "MMPX",
+        "description": "MM OVERNIGHT DEPOSIT"
+      },
+      {
+        "flexcubeValue": "MPFB",
+        "reisValue": "MPFB",
+        "description": "MM WAKALA INVESTMENT (Borrowing)"
+      },
+      {
+        "flexcubeValue": "MPXB",
+        "reisValue": "MPXB",
+        "description": "MM OVERNIGHT DEPOSITS (Borrowing)"
+      },
+      {
+        "flexcubeValue": "RMPC",
+        "reisValue": "RMPC",
+        "description": "RESTRICTED MUDHARABHA (BORROWING)"
+      },
+      {
+        "flexcubeValue": "RMPX",
+        "reisValue": "RMPX",
+        "description": "RESTRICTED MUDARABHA"
+      },
+      {
+        "flexcubeValue": "UMPC",
+        "reisValue": "UMPC",
+        "description": "UNRESTRICTED MUDHARABHA (BORROWING)"
+      },
+      {
+        "flexcubeValue": "UMPX",
+        "reisValue": "UMPX",
+        "description": "UNRESTRICTED MUDARABHA"
+      },
+      {
+        "flexcubeValue": "ACOP",
+        "reisValue": "ACOP",
+        "description": "Account Opening Charges"
+      },
+      {
+        "flexcubeValue": "CHBK",
+        "reisValue": "CHBK",
+        "description": "عمولة إصدار دفاتر صكوك"
+      },
+      {
+        "flexcubeValue": "CQWL",
+        "reisValue": "CQWL",
+        "description": "سحب نقدي بصك"
+      },
+      {
+        "flexcubeValue": "CRWL",
+        "reisValue": "CRWL",
+        "description": "Cardless Withdrawal"
+      },
+      {
+        "flexcubeValue": "DCAF",
+        "reisValue": "DCAF",
+        "description": "INTERNATIONAL CARD ANNUAL FEE"
+      },
+      {
+        "flexcubeValue": "DCHG",
+        "reisValue": "DCHG",
+        "description": "DEBIT CARD ISSUANCE CHARGES"
+      },
+      {
+        "flexcubeValue": "DCRI",
+        "reisValue": "DCRI",
+        "description": "DEBIT CARD REPLACEMENT"
+      },
+      {
+        "flexcubeValue": "ECMP",
+        "reisValue": "ECMP",
+        "description": "Ecomerce Purchase"
+      },
+      {
+        "flexcubeValue": "ECMR",
+        "reisValue": "ECMR",
+        "description": "Ecomerce Refund"
+      },
+      {
+        "flexcubeValue": "ESOF",
+        "reisValue": "ESOF",
+        "description": "E-COMMERCE PURCHASE OFFUS"
+      },
+      {
+        "flexcubeValue": "ESON",
+        "reisValue": "ESON",
+        "description": "E-COMMERCE PURCHASE ONUS"
+      },
+      {
+        "flexcubeValue": "IDCI",
+        "reisValue": "IDCI",
+        "description": "INTERNATIONAL ATM CARD ISSUANCE"
+      },
+      {
+        "flexcubeValue": "INTL",
+        "reisValue": "INTL",
+        "description": "International Card ATM Withdrawal"
+      },
+      {
+        "flexcubeValue": "LIBY",
+        "reisValue": "LIBY",
+        "description": "Libyana Voucher"
+      },
+      {
+        "flexcubeValue": "LYCR",
+        "reisValue": "LYCR",
+        "description": "LY CREDIT"
+      },
+      {
+        "flexcubeValue": "LYDR",
+        "reisValue": "LYDR",
+        "description": "LY DEBIT"
+      },
+      {
+        "flexcubeValue": "MASB",
+        "reisValue": "MASB",
+        "description": "MOBILE APP SUBSCRIPTION"
+      },
+      {
+        "flexcubeValue": "OBMV",
+        "reisValue": "OBMV",
+        "description": "Mobile vouchers from OBDX"
+      },
+      {
+        "flexcubeValue": "POCA",
+        "reisValue": "POCA",
+        "description": "POS CASH ADVANCE"
+      },
+      {
+        "flexcubeValue": "PORD",
+        "reisValue": "PORD",
+        "description": "POS REFUND"
+      },
+      {
+        "flexcubeValue": "POSR",
+        "reisValue": "POSR",
+        "description": "POS Refund"
+      },
+      {
+        "flexcubeValue": "PSBI",
+        "reisValue": "PSBI",
+        "description": "POS BAL INQUI"
+      },
+      {
+        "flexcubeValue": "PSOF",
+        "reisValue": "PSOF",
+        "description": "NORMAL PUR OFFUS"
+      },
+      {
+        "flexcubeValue": "PSON",
+        "reisValue": "PSON",
+        "description": "NORMAL PUR ONUS"
+      },
+      {
+        "flexcubeValue": "PSRO",
+        "reisValue": "PSRO",
+        "description": "NORMAL PUR REONUS"
+      },
+      {
+        "flexcubeValue": "PYUS",
+        "reisValue": "PYUS",
+        "description": "شراء عملة (أغراض شخصية )"
+      },
+      {
+        "flexcubeValue": "SALR",
+        "reisValue": "SALR",
+        "description": "SALARY PRODUCT"
+      },
+      {
+        "flexcubeValue": "SCCH",
+        "reisValue": "SCCH",
+        "description": "Stop Cheque Charges"
+      },
+      {
+        "flexcubeValue": "TBIB",
+        "reisValue": "TBIB",
+        "description": "Transfer between incoming banks"
+      },
+      {
+        "flexcubeValue": "TDCL",
+        "reisValue": "TDCL",
+        "description": "CLOSE MODE FOR TD"
+      },
+      {
+        "flexcubeValue": "TDRC",
+        "reisValue": "TDRC",
+        "description": "Redemption by cash"
+      },
+      {
+        "flexcubeValue": "TMBI",
+        "reisValue": "TMBI",
+        "description": "ATB BALANACE INQ"
+      },
+      {
+        "flexcubeValue": "TMMN",
+        "reisValue": "TMMN",
+        "description": "ATM MINI STATMENT"
+      },
+      {
+        "flexcubeValue": "TMOF",
+        "reisValue": "TMOF",
+        "description": "ATM OFF-US CASH WITH"
+      },
+      {
+        "flexcubeValue": "TMON",
+        "reisValue": "TMON",
+        "description": "ATM ONUS CASH WITHDRAWAL"
+      },
+      {
+        "flexcubeValue": "TMRO",
+        "reisValue": "TMRO",
+        "description": "ATM REONUS CASH WITH"
+      },
+      {
+        "flexcubeValue": "WABS",
+        "reisValue": "WABS",
+        "description": "Mobile vouchers from WABS"
+      },
+      {
+        "flexcubeValue": "WTSB",
+        "reisValue": "WTSB",
+        "description": "WALLET TOPUP SUBSCRIPTION"
+      },
+      {
+        "flexcubeValue": "ZACA",
+        "reisValue": "ZACA",
+        "description": "RT product for Account Closure charges"
+      },
+      {
+        "flexcubeValue": "ZACC",
+        "reisValue": "ZACC",
+        "description": "RT product for Account Closure charges"
+      },
+      {
+        "flexcubeValue": "ZACM",
+        "reisValue": "ZACM",
+        "description": "RT product for Account Closure charges"
+      },
+      {
+        "flexcubeValue": "ZACN",
+        "reisValue": "ZACN",
+        "description": "RT product for Account Closure charges"
+      },
+      {
+        "flexcubeValue": "ZASA",
+        "reisValue": "ZASA",
+        "description": "RT product for Account Statement charges"
+      },
+      {
+        "flexcubeValue": "ZASC",
+        "reisValue": "ZASC",
+        "description": "RT product for Account Statement charges"
+      },
+      {
+        "flexcubeValue": "ZASM",
+        "reisValue": "ZASM",
+        "description": "RT product for Account Statement charges"
+      },
+      {
+        "flexcubeValue": "ZASN",
+        "reisValue": "ZASN",
+        "description": "RT product for Account Statement charges"
+      },
+      {
+        "flexcubeValue": "ZCHA",
+        "reisValue": "ZCHA",
+        "description": "RT product for Cheque Book charges"
+      },
+      {
+        "flexcubeValue": "ZCHC",
+        "reisValue": "ZCHC",
+        "description": "RT product for Cheque Book charges"
+      },
+      {
+        "flexcubeValue": "ZCHM",
+        "reisValue": "ZCHM",
+        "description": "RT product for Cheque Book charges"
+      },
+      {
+        "flexcubeValue": "ZCHN",
+        "reisValue": "ZCHN",
+        "description": "RT product for Cheque Book charges"
+      },
+      {
+        "flexcubeValue": "ZRAC",
+        "reisValue": "ZRAC",
+        "description": "RT Credit product for Account closure charges by Fund Transfer"
+      },
+      {
+        "flexcubeValue": "ZRAD",
+        "reisValue": "ZRAD",
+        "description": "RT Debit product for Account closure charges by Fund Transfer"
+      },
+      {
+        "flexcubeValue": "ZRBC",
+        "reisValue": "ZRBC",
+        "description": "RT product for Account closure charges by Bankers Cheque"
+      },
+      {
+        "flexcubeValue": "ZRCA",
+        "reisValue": "ZRCA",
+        "description": "RT Credit product for Account closure charges by Cash"
+      },
+      {
+        "flexcubeValue": "ZRCD",
+        "reisValue": "ZRCD",
+        "description": "RT Debit product for Account closure charges by Cash"
+      },
+      {
+        "flexcubeValue": "ZRDD",
+        "reisValue": "ZRDD",
+        "description": "RT product for Demand Draft for Account closure charges"
+      },
+      {
+        "flexcubeValue": "ZRDP",
+        "reisValue": "ZRDP",
+        "description": "RT product for Recurring Deposit Payment"
+      },
+      {
+        "flexcubeValue": "ZRGD",
+        "reisValue": "ZRGD",
+        "description": "RT Debit product for Account closure charges by GL"
+      },
+      {
+        "flexcubeValue": "ZRGL",
+        "reisValue": "ZRGL",
+        "description": "RT Credit product for Account closure charges by GL"
+      },
+      {
+        "flexcubeValue": "ZSTA",
+        "reisValue": "ZSTA",
+        "description": "RT product for Stop Payment charges"
+      },
+      {
+        "flexcubeValue": "ZSTC",
+        "reisValue": "ZSTC",
+        "description": "RT product for Stop Payment charges"
+      },
+      {
+        "flexcubeValue": "ZSTM",
+        "reisValue": "ZSTM",
+        "description": "RT product for Stop Payment charges"
+      },
+      {
+        "flexcubeValue": "ZSTN",
+        "reisValue": "ZSTN",
+        "description": "RT product for Stop Payment charges"
+      },
+      {
+        "flexcubeValue": "SI01",
+        "reisValue": "SI01",
+        "description": "تعليمات مستدامه"
+      },
+      {
+        "flexcubeValue": "BPAT",
+        "reisValue": "BPAT",
+        "description": "Bill Payment Against Account"
+      }
+    ],
+    "LEGAL_ENTITY": [
+      {
+        "flexcubeValue": "FRNGC",
+        "reisValue": "FRNGC",
+        "description": "شركة مساهمة عامة"
+      },
+      {
+        "flexcubeValue": "GOVEN",
+        "reisValue": "GOVEN",
+        "description": "شركة مساهمة خاصة"
+      },
+      {
+        "flexcubeValue": "LIMCO",
+        "reisValue": "LIMCO",
+        "description": "شركة ذات مسؤولية محدودة (LLC)"
+      },
+      {
+        "flexcubeValue": "NNPFT",
+        "reisValue": "NNPFT",
+        "description": "شركة تضامن (Partnership)"
+      },
+      {
+        "flexcubeValue": "PARTN",
+        "reisValue": "PARTN",
+        "description": "مؤسسة فردية (Sole Proprietorship)"
+      },
+      {
+        "flexcubeValue": "PRICO",
+        "reisValue": "PRICO",
+        "description": "كيان غير ربحي (Non-Profit)"
+      },
+      {
+        "flexcubeValue": "PUBCO",
+        "reisValue": "PUBCO",
+        "description": "كيان حكومي (Government Entity)"
+      },
+      {
+        "flexcubeValue": "SOLEP",
+        "reisValue": "SOLEP",
+        "description": "فرع شركة أجنبية"
+      }
+    ],
+    "ACTIVITY": [
+      {
+        "flexcubeValue": "COMM",
+        "reisValue": "COMM",
+        "description": "تجاري"
+      },
+      {
+        "flexcubeValue": "PUEN",
+        "reisValue": "PUEN",
+        "description": "جهات عامة"
+      },
+      {
+        "flexcubeValue": "SERV",
+        "reisValue": "SERV",
+        "description": "خدمي"
+      },
+      {
+        "flexcubeValue": "NOPO",
+        "reisValue": "NOPO",
+        "description": "مؤسسات غير ربحية"
+      },
+      {
+        "flexcubeValue": "PRIS",
+        "reisValue": "PRIS",
+        "description": "قطاع خاص"
+      }
+    ],
+    "DISTRIBUTION_CHANNEL": [
+      {
+        "flexcubeValue": "00",
+        "reisValue": "00",
+        "description": "الفروع البنكية"
+      },
+      {
+        "flexcubeValue": "01",
+        "reisValue": "01",
+        "description": "الخدمات الإلكترونية"
+      },
+      {
+        "flexcubeValue": "02",
+        "reisValue": "02",
+        "description": "التطبيقات المصرفية"
+      },
+      {
+        "flexcubeValue": "03",
+        "reisValue": "03",
+        "description": "أجهزة الصراف الآلي (ATM)"
+      },
+      {
+        "flexcubeValue": "04",
+        "reisValue": "04",
+        "description": "الوكلاء / الوسطاء"
+      },
+      {
+        "flexcubeValue": "05",
+        "reisValue": "05",
+        "description": "مراكز الاتصال"
+      },
+      {
+        "flexcubeValue": "06",
+        "reisValue": "06",
+        "description": "القنوات الرقمية الأخرى"
+      }
+    ],
+    "SOURCE_OF_INCOME": [
+      {
+        "flexcubeValue": "BUSN",
+        "reisValue": "BUSN",
+        "description": "راتب وظيفي"
+      },
+      {
+        "flexcubeValue": "COMP",
+        "reisValue": "COMP",
+        "description": "أعمال تجارية"
+      },
+      {
+        "flexcubeValue": "INCM",
+        "reisValue": "INCM",
+        "description": "استثمارات"
+      },
+      {
+        "flexcubeValue": "INVS",
+        "reisValue": "INVS",
+        "description": "مدخرات شخصية"
+      },
+      {
+        "flexcubeValue": "JOBS",
+        "reisValue": "JOBS",
+        "description": "معاشات أو تعويضات"
+      },
+      {
+        "flexcubeValue": "PENS",
+        "reisValue": "PENS",
+        "description": "هبات أو ميراث"
+      },
+      {
+        "flexcubeValue": "PRSA",
+        "reisValue": "PRSA",
+        "description": "دخل من الخارج"
+      },
+      {
+        "flexcubeValue": "CCMP",
+        "reisValue": "CCMP",
+        "description": "أعمال تجارية"
+      },
+      {
+        "flexcubeValue": "CINC",
+        "reisValue": "CINC",
+        "description": "استثمارات"
+      },
+      {
+        "flexcubeValue": "CENB",
+        "reisValue": "CENB",
+        "description": "دخل من الخارج"
+      }
+    ],
+    "DOCUMENT_TYPE": [
+      {
+        "flexcubeValue": "PASS",
+        "reisValue": "PASS",
+        "description": "Passport"
+      }
+    ]
+  }
+}
