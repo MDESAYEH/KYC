@@ -43,9 +43,3 @@ export interface ISourceOfIncomeStrategy {
   toReisValue(selectedSources: string[]): Promise<string>;
 }
 export const SOURCE_OF_INCOME_STRATEGY = Symbol('ISourceOfIncomeStrategy');
-
-/** Corporate related persons plug in here once FLEXCUBE provides the mapping (open item 6). */
-export interface IRelationProvider {
-  getRelatedPersons(kycRefNo: string): Promise<import('../canonical').CanonicalRelatedPerson[]>;
-}
-export const RELATION_PROVIDER = Symbol('IRelationProvider');

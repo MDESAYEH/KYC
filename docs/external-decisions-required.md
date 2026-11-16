@@ -108,7 +108,7 @@ Not answered by REIS: callback timeout, retry interval and attempt count, whethe
 ### F3. Corporate relations source mapping  *(PARTLY ANSWERED - see section 0)*
 - **Question:** Where do Corporate related persons come from in FLEXCUBE, with which fields, and how do FLEXCUBE relation codes map to REIS `relationshipId`? (REIS side is already confirmed: formId 4 accepts ids 6-15.)
 - **Why needed:** Corporate onboarding needs the `relations` array populated.
-- **Current temporary behavior:** `relations` is always `[]`. The transformer can serialize canonical relations, but nothing produces them from FLEXCUBE (`IRelationProvider` has no implementation). Individual relations are not required.
+- **Current behavior:** corporate key persons are read from `STTM_KYC_CORP_KEYPERSONS` (+ `_CUSTOM`) and sent in `relations` of the same call (see `docs/flexcube-sync.md`); individual customers send `relations: []`. Column names still need UAT1 verification.
 - **Component affected:** Relation provider, FLEXCUBE-to-canonical mapping, transformer.
 - **Blocks:** UAT for Corporate customers with related persons; otherwise PROD.
 

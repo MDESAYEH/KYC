@@ -82,7 +82,7 @@ Important distinction: a **REIS contract** item can be CONFIRMED while the **FLE
 | 3 | FLEXCUBE -> API authentication | Not assumed |
 | 4 | Final Bank-approved code mappings | Mapping table exists and is EMPTY (nothing seeded); unmapped value -> `UnmappedReferenceValueError` (never guessed) |
 | 5 | Mandatory fields marked NA in the workbook | Validation rules provisional |
-| 6 | **FLEXCUBE source mapping/population** for Corporate related persons. The REIS side is NOT TBD: relation DTOs and the nested `relations` transport are confirmed | `IRelationProvider` interface only |
+| 6 | **FLEXCUBE source mapping/population** for Corporate related persons. The REIS side is NOT TBD: relation DTOs and the nested `relations` transport are confirmed | Implemented: key persons are read from `STTM_KYC_CORP_KEYPERSONS` (UAT1 verification pending) |
 | 7 | How FLEXCUBE is updated with the result | `IFlexcubeStatusUpdater` + `MockFlexcubeStatusUpdater` |
 | 8 | Webhook security mechanism | `IWebhookSecurityStrategy`, `WEBHOOK_SECURITY_MODE`; none assumed |
 | 9 | REIS webhook retry/timeout policy | Handler will be idempotent regardless |
