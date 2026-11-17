@@ -90,17 +90,9 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
       }
       return { rowsAffected: failed.length };
     }
-    const rows = find().filter((r) => r.PROCESS_STATUS === b.sourceStatus);
     if (sql.includes('RESPONSE = NULL')) {
-      // reconciliation: E -> N only for a row proven closed by a technical failure before any send
-      const restored = rows.filter(
-        (r) =>
-          r.REQUEST === null &&
-          r.REQ_DATE === undefined &&
-          (r.REIS_FINAL_STATUS ?? null) === null &&
-          r.RETRY_COUNT === 1 &&
-          r.RESPONSE === b.expectedResponse,
-      );
+      // reconciliation E -> N: the UPDATE repeats the WHOLE eligibility predicate
+      const restored = find().filter((r) => this.neverSentEligible(r, b));
       for (const r of restored) {
         r.PROCESS_STATUS = String(b.targetStatus);
         r.RESPONSE = null;
@@ -109,6 +101,19 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
       }
       return { rowsAffected: restored.length };
     }
+    if (sql.includes(':originalStatus')) {
+      // rollback of a reconciled row: only while it is exactly in the post-restore state
+      const back = find().filter((r) => this.restoredState(r, b));
+      for (const r of back) {
+        r.PROCESS_STATUS = String(b.originalStatus);
+        r.RESPONSE = b.originalResponse as string | null;
+        r.RETRY_COUNT = Number(b.originalRetryCount);
+        if (b.originalResDate === null) delete r.RES_DATE;
+        else r.RES_DATE = String(b.originalResDate);
+      }
+      return { rowsAffected: back.length };
+    }
+    const rows = find().filter((r) => r.PROCESS_STATUS === b.sourceStatus);
     if (sql.includes('REQ_DATE = NULL')) {
       // release: W -> N, only while nothing was stored
       const released = rows.filter((r) => r.REQUEST === null);
@@ -140,33 +145,35 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
     const hooked = this.queryHook?.(sql, b);
     if (hooked) throw hooked;
     if (sql.includes('IN (:expectedResponse0')) {
-      const expected = Object.entries(b)
-        .filter(([k]) => k.startsWith('expectedResponse'))
-        .map(([, v]) => v);
-      const uuid = new RegExp(OWN_MSGID_PATTERN, 'i');
       return this.staging
-        .filter(
-          (s) =>
-            s.PROCESS_STATUS === b.errorStatus &&
-            s.REQUEST === null &&
-            s.REQ_DATE === undefined &&
-            (s.REIS_FINAL_STATUS ?? null) === null &&
-            s.RETRY_COUNT === 1 &&
-            uuid.test(s.MSGID) &&
-            expected.includes(s.RESPONSE),
-        )
-        .filter((s) =>
-          this.master.some(
-            (m) =>
-              m.KYC_REF_NO === s.KYC_REF_NO &&
-              m.MOD_NO === s.SEQ_NO &&
-              (m.RECORD_STAT ?? 'O') === 'O' &&
-              ['R', 'C'].includes(m.KYC_CUST_TYPE) &&
-              (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= String(b.since),
-          ),
-        )
+        .filter((r) => this.neverSentEligible(r, b))
         .slice(0, Number(b.maxRows))
-        .map((s) => ({ KYC_REF_NO: s.KYC_REF_NO, SEQ_NO: s.SEQ_NO }));
+        .map((r) => ({ KYC_REF_NO: r.KYC_REF_NO, SEQ_NO: r.SEQ_NO }));
+    }
+    if (sql.includes('REQ_DATE_ISO')) {
+      return this.staging
+        .filter((r) => r.KYC_REF_NO === b.kycRefNo && r.SEQ_NO === b.seqNo)
+        .map((r) => ({
+          KYC_REF_NO: r.KYC_REF_NO,
+          SEQ_NO: r.SEQ_NO,
+          MSGID: r.MSGID,
+          PROCESS_STATUS: r.PROCESS_STATUS,
+          REQUEST: r.REQUEST,
+          RESPONSE: r.RESPONSE,
+          RETRY_COUNT: r.RETRY_COUNT,
+          REQ_DATE_ISO: r.REQ_DATE ?? null,
+          RES_DATE_ISO: r.RES_DATE ?? null,
+          REIS_FINAL_STATUS: r.REIS_FINAL_STATUS ?? null,
+        }));
+    }
+    if (sql.includes(':currentStatus')) {
+      return [
+        {
+          N: this.staging.filter(
+            (r) => r.KYC_REF_NO === b.kycRefNo && r.SEQ_NO === b.seqNo && this.restoredState(r, b),
+          ).length,
+        },
+      ];
     }
     if (sql.includes('FROM ALL_TAB_COLUMNS')) return [{ N: this.keypersonColumnPresent ? 1 : 0 }];
     if (sql.includes('s.REQ_DATE IS NULL')) {
@@ -222,6 +229,44 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
     }
     const d = this.details.get(k);
     return d ? [d] : [];
+  }
+
+  /** Mirror of StagingSubmissionRepository.neverSentPredicate (SELECT and UPDATE share it). */
+  private neverSentEligible(r: StagingRow, b: SqlBinds): boolean {
+    const expected = Object.entries(b)
+      .filter(([k]) => k.startsWith('expectedResponse'))
+      .map(([, v]) => v);
+    return (
+      r.PROCESS_STATUS === b.errorStatus &&
+      r.REQUEST === null &&
+      r.REQ_DATE === undefined &&
+      (r.REIS_FINAL_STATUS ?? null) === null &&
+      r.RETRY_COUNT === 1 &&
+      new RegExp(OWN_MSGID_PATTERN, 'i').test(r.MSGID) &&
+      expected.includes(r.RESPONSE) &&
+      this.master.some(
+        (m) =>
+          m.KYC_REF_NO === r.KYC_REF_NO &&
+          m.MOD_NO === r.SEQ_NO &&
+          (m.RECORD_STAT ?? 'O') === 'O' &&
+          ['R', 'C'].includes(m.KYC_CUST_TYPE) &&
+          (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= String(b.since),
+      )
+    );
+  }
+
+  /** Mirror of StagingSubmissionRepository.restoredStatePredicate. */
+  private restoredState(r: StagingRow, b: SqlBinds): boolean {
+    return (
+      r.MSGID === b.msgId &&
+      r.PROCESS_STATUS === b.currentStatus &&
+      r.REQUEST === null &&
+      r.RESPONSE === null &&
+      r.REQ_DATE === undefined &&
+      r.RES_DATE === undefined &&
+      (r.REIS_FINAL_STATUS ?? null) === null &&
+      r.RETRY_COUNT === 0
+    );
   }
 
   /** The SQL lists the KYC types it accepts: IN ('R', 'C') or, without corporate support, IN ('R'). */

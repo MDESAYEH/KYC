@@ -27,9 +27,15 @@ ls -l .env                    # permissions only
 cd /opt/KYC
 STAMP=$(date +%Y%m%d-%H%M%S); mkdir -p /root/kyc-backup-$STAMP && chmod 700 /root/kyc-backup-$STAMP
 cp -p .env /root/kyc-backup-$STAMP/env.bak && chmod 600 /root/kyc-backup-$STAMP/env.bak
-cp -p var/kyc-local.sqlite /root/kyc-backup-$STAMP/ 2>/dev/null || echo "set DB_SQLITE_PATH backup by hand"
 git rev-parse HEAD > /root/kyc-backup-$STAMP/commit.txt
+echo $STAMP > /root/kyc-backup-latest.txt
 ```
+
+**The SQLite file is backed up in step 2, with the tool, not with `cp`.** Copying a database file that is open can lose
+committed transactions (they may still be in the `-wal` file) or capture a half-written page. `npm run backup:sqlite` uses
+SQLite's online backup API: a consistent snapshot while the service keeps running, verified with `integrity_check`, never
+overwriting an existing file, with its size and SHA-256 printed. (The tool is part of the reviewed commit, so it exists only
+after step 2 has built it; the SQLite file itself is not changed by the update.)
 
 Oracle is **not** changed by this procedure. Save the read-only report before and after: `npm run check:uat1`
 (writes `uat1-check-report.json`; it contains counts only).
@@ -44,6 +50,8 @@ git checkout --detach <the reviewed commit or tag>      # not main until the cha
 npm ci
 npm run build
 npm test                                                 # must pass; no .env is read by the tests
+STAMP=$(cat /root/kyc-backup-latest.txt)
+npm run backup:sqlite -- /root/kyc-backup-$STAMP/kyc-local.sqlite   # consistent snapshot; note the SHA-256 it prints
 ```
 
 If `FLEXCUBE_POLL_ENABLED=true` is in `.env`, set it to `false` **before** the next step (edit the line by hand; do not
@@ -66,12 +74,12 @@ for Oracle.
 
 ```bash
 npm run check:uat1               # constraints, triggers, row classification, key-person column (SELECT only)
-npm run reconcile:staging        # DRY RUN: counts only, writes nothing
+npm run reconcile:staging        # DRY RUN: counts, evidence and the eligible-list hash; writes nothing
 ```
 
 Decisions that need a person (see the PR): the in-progress status the CHECK constraint accepts
 (`FLEXCUBE_STAGING_STATUS_IN_PROGRESS`), the cut-off (`FLEXCUBE_SYNC_START_DATE`), whether to restore the rows closed as `E`
-by the incident (`docs/flexcube-sync.md`), and the key-person type column (Finexta). Only then, with approval, set
+by the incident (needs the attestation, backup and rollback plan in `docs/flexcube-sync.md`), and the key-person type column (Finexta). Only then, with approval, set
 `FLEXCUBE_POLL_ENABLED=true` and restart; watch `flexcube.sync.run` and `flexcube.sync.circuitOpened` in the journal.
 
 ## 5. Rollback (back to the previous commit)
@@ -82,7 +90,10 @@ sudo systemctl stop kyc.service
 git checkout --detach $(cat /root/kyc-backup-<STAMP>/commit.txt)
 npm ci && npm run build
 cp -p /root/kyc-backup-<STAMP>/env.bak .env && chmod 600 .env      # only if .env was edited
-cp -p /root/kyc-backup-<STAMP>/kyc-local.sqlite var/kyc-local.sqlite   # only if the local database was damaged
+# only if the local database was damaged (service stopped): move the damaged file and its -wal / -shm aside, never delete them
+mv var/kyc-local.sqlite var/kyc-local.sqlite.damaged-$(date +%s) 2>/dev/null; rm -f var/kyc-local.sqlite-wal var/kyc-local.sqlite-shm
+cp -p /root/kyc-backup-<STAMP>/kyc-local.sqlite var/kyc-local.sqlite
+sqlite3 var/kyc-local.sqlite "PRAGMA integrity_check;" 2>/dev/null || node -e "console.log(new (require('better-sqlite3'))('var/kyc-local.sqlite').pragma('integrity_check', {simple:true}))"
 sudo systemctl start kyc.service
 ```
 
