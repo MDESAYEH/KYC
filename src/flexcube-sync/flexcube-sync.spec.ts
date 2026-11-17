@@ -1,4 +1,5 @@
 import { loadConfiguration } from '../config/configuration';
+import { Logger } from '@nestjs/common';
 import {
   FlexcubeKycSource,
   normalizeSyncStartDate,
@@ -543,6 +544,24 @@ describe('FLEXCUBE polling configuration and scheduler', () => {
     expect(
       loadConfiguration({ FLEXCUBE_SYNC_START_DATE: '  ' }).flexcube.syncStartDate,
     ).toBeUndefined();
+  });
+
+  it('logs a failed pass with the Oracle code only, never the message', async () => {
+    const logged: unknown[] = [];
+    const spy = jest.spyOn(Logger.prototype, 'error').mockImplementation((m: unknown) => {
+      logged.push(m);
+    });
+    const service = {
+      runOnce: jest
+        .fn()
+        .mockRejectedValue(new Error('ORA-00942: table or view SECRET_T does not exist')),
+    };
+    const scheduler = new FlexcubeSyncScheduler(service as unknown as FlexcubeSyncService, 60000);
+    await scheduler.tick();
+    spy.mockRestore();
+    expect(logged).toEqual([{ event: 'flexcube.sync.failed', error: 'ORA-00942' }]);
+    expect(JSON.stringify(logged)).not.toContain('SECRET_T');
+    await scheduler.onModuleDestroy();
   });
 
   it('a failing pass is logged and the scheduler keeps going', async () => {

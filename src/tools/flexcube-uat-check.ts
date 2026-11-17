@@ -1,4 +1,5 @@
 import { CanonicalToReisTransformer } from '../reis/canonical-to-reis.transformer';
+import { oraCode, oracleErrorCode } from '../flexcube/oracle-error';
 import { FlexcubeKycSource, normalizeSyncStartDate } from '../flexcube/source/flexcube-kyc-source';
 import { FlexcubeToCanonicalMapper } from '../flexcube/flexcube-to-canonical.mapper';
 import { assertSafeTableName, IFlexcubeSqlExecutor } from '../flexcube/staging/flexcube-staging';
@@ -132,11 +133,7 @@ export interface UatCheckReport {
   dryRun: { kycRefNo: string; seqNo: number; type: string; result: string; detail?: string }[];
 }
 
-/** Oracle error code only (e.g. ORA-00942), never the full message. */
-export function oraCode(error: unknown): string {
-  const m = error instanceof Error ? /(ORA|NJS|DPI)-\d{3,5}/.exec(error.message) : null;
-  return m ? m[0] : error instanceof Error ? error.name : 'UNKNOWN_ERROR';
-}
+export { oraCode };
 
 /** Validation failure -> "ErrorName: FIELD" without the value. */
 function failureDetail(error: unknown): string {
@@ -144,7 +141,9 @@ function failureDetail(error: unknown): string {
   const e = error as Error & { field?: string; mappingType?: string; flexcubeValue?: string };
   if (e.mappingType) return `${e.name}: ${e.mappingType} (value not in the agreed list)`;
   if (e.field) return `${e.name}: ${e.field}`;
-  return e.name;
+  // Database errors: the Oracle code (e.g. ORA-00904), never the message.
+  const code = oracleErrorCode(error);
+  return code ? `${e.name}: ${code}` : e.name;
 }
 
 export async function runUatCheck(

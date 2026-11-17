@@ -21,6 +21,7 @@ class FakeUat implements IFlexcubeSqlExecutor {
   privileges = ['SELECT', 'INSERT', 'UPDATE'];
   connectError: Error | null = null;
   pending: SqlRow[] = [];
+  keypersonsError: Error | null = null;
   details = new Map<string, SqlRow>();
 
   async execute(sql: string): Promise<{ rowsAffected: number }> {
@@ -51,6 +52,7 @@ class FakeUat implements IFlexcubeSqlExecutor {
     if (sql.includes('ALL_TAB_PRIVS')) return this.privileges.map((p) => ({ PRIVILEGE: p }));
     if (sql.includes('GROUP BY PROCESS_STATUS')) return [{ S: 'S', N: 3 }];
     if (sql.includes('FROM STTM_KYC_MASTER m')) return this.pending;
+    if (sql.includes('KEYPERSONS') && this.keypersonsError) throw this.keypersonsError;
     if (sql.includes('PRODUCT_CUSTOM')) return [{ PRODUCT_CODE: 'SALR' }];
     const d = this.details.get(String(b.kycRefNo));
     return d ? [d] : [];
@@ -186,6 +188,23 @@ describe('UAT1 read-only check', () => {
       },
     ]);
     expect(JSON.stringify(r)).not.toMatch(/Synthetic|EMPL|samer/);
+  });
+
+  it('shows the Oracle code (never the message) for a database error in the dry run', async () => {
+    db.pending = [{ KYC_REF_NO: 'K-CORP', KYC_CUST_TYPE: 'C', MOD_NO: 1 }];
+    db.details.set('K-CORP', { CRP_BUSINESS_NAME: 'Synthetic Co' });
+    db.keypersonsError = new Error('ORA-00904: "K"."SECRET_COLUMN": invalid identifier');
+    const r = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
+    expect(r.dryRun).toEqual([
+      {
+        kycRefNo: 'K-CORP',
+        seqNo: 1,
+        type: 'CORPORATE',
+        result: 'REJECTED',
+        detail: 'Error: ORA-00904',
+      },
+    ]);
+    expect(JSON.stringify(r)).not.toMatch(/SECRET_COLUMN|invalid identifier|Synthetic Co/);
   });
 
   it('extracts only the Oracle error code', () => {
