@@ -7,6 +7,7 @@ import {
   assertSafeTableName,
   DEFAULT_KEYPERSON_TYPE_COLUMN,
   IFlexcubeSqlExecutor,
+  OWN_MSGID_PATTERN,
 } from '../flexcube/staging/flexcube-staging';
 
 /**
@@ -145,7 +146,15 @@ export interface UatCheckReport {
     hasDelete: boolean;
     ownedByUser: boolean;
     processStatuses: Record<string, number>;
+    /** Rows per PROCESS_STATUS split into ours (UUID MSGID) and others (e.g. Finexta test rows). */
+    processStatusesByOwner: { ours: Record<string, number>; others: Record<string, number> };
+    /** CHECK constraints (ALL_CONSTRAINTS, type C): which PROCESS_STATUS values are accepted. */
+    checkConstraints: { name: string; condition: string }[];
+    triggers: { name: string; type: string; event: string; status: string }[];
   };
+  /** The cut-off in use (FLEXCUBE_SYNC_START_DATE, normalized) and the latest maker date per branch. */
+  cutoff?: string;
+  branches?: { branch: string; kycs: number; latestMakerDate: string | null }[];
   pending?: { total: number; individual: number; corporate: number; error?: string };
   dryRun: { kycRefNo: string; seqNo: number; type: string; result: string; detail?: string }[];
 }
@@ -260,19 +269,69 @@ export async function runUatCheck(
     .then((r) => Number(r[0]?.N) > 0)
     .catch(() => false);
   const privileges = [...new Set(privRows.map((r) => String(r.PRIVILEGE)))].sort();
+  const ownerKind = `CASE WHEN REGEXP_LIKE(MSGID, '${OWN_MSGID_PATTERN}', 'i') THEN 'OURS' ELSE 'OTHERS' END`;
   const statuses = await db
     .query(
-      `SELECT NVL(PROCESS_STATUS, '-') AS S, COUNT(*) AS N FROM ${staging} GROUP BY PROCESS_STATUS`,
+      `SELECT NVL(PROCESS_STATUS, '-') AS S, ${ownerKind} AS OWNER_KIND, COUNT(*) AS N ` +
+        `FROM ${staging} GROUP BY NVL(PROCESS_STATUS, '-'), ${ownerKind}`,
       {},
     )
     .catch(() => []);
+  const byOwner = { ours: {} as Record<string, number>, others: {} as Record<string, number> };
+  const totals: Record<string, number> = {};
+  for (const r of statuses) {
+    const side = r.OWNER_KIND === 'OURS' ? byOwner.ours : byOwner.others;
+    side[String(r.S)] = (side[String(r.S)] ?? 0) + Number(r.N);
+    totals[String(r.S)] = (totals[String(r.S)] ?? 0) + Number(r.N);
+  }
+  // Why does a claim (N -> W) fail? Constraints and triggers of the staging table (read-only).
+  const constraints = await db
+    .query(
+      `SELECT CONSTRAINT_NAME, SEARCH_CONDITION FROM ALL_CONSTRAINTS ` +
+        `WHERE TABLE_NAME = :t AND CONSTRAINT_TYPE = 'C' ORDER BY CONSTRAINT_NAME`,
+      { t: stagingName },
+    )
+    .catch(() => []);
+  const triggers = await db
+    .query(
+      `SELECT TRIGGER_NAME, TRIGGER_TYPE, TRIGGERING_EVENT, STATUS FROM ALL_TRIGGERS ` +
+        `WHERE TABLE_NAME = :t ORDER BY TRIGGER_NAME`,
+      { t: stagingName },
+    )
+    .catch(() => []);
+  // Maker date per branch (first 3 characters of KYC_REF_NO): helps choosing the UAT cut-off.
+  const branches = await db
+    .query(
+      `SELECT SUBSTR(KYC_REF_NO, 1, 3) AS BRANCH, COUNT(*) AS N, ` +
+        `TO_CHAR(MAX(MAKER_DT_STAMP), 'YYYY-MM-DD"T"HH24:MI:SS') AS LATEST ` +
+        `FROM STTM_KYC_MASTER GROUP BY SUBSTR(KYC_REF_NO, 1, 3) ORDER BY 1`,
+      {},
+    )
+    .catch(() => []);
+  report.branches = branches.map((r) => ({
+    branch: String(r.BRANCH),
+    kycs: Number(r.N),
+    latestMakerDate: r.LATEST === null || r.LATEST === undefined ? null : String(r.LATEST),
+  }));
+  report.cutoff = normalizeSyncStartDate(syncStartDate);
   report.staging = {
     privileges,
     canInsert: owned || privileges.includes('INSERT'),
     canUpdate: owned || privileges.includes('UPDATE'),
     hasDelete: owned || privileges.includes('DELETE'),
     ownedByUser: owned,
-    processStatuses: Object.fromEntries(statuses.map((r) => [String(r.S), Number(r.N)])),
+    processStatuses: totals,
+    processStatusesByOwner: byOwner,
+    checkConstraints: constraints.map((r) => ({
+      name: String(r.CONSTRAINT_NAME),
+      condition: String(r.SEARCH_CONDITION ?? '').trim(),
+    })),
+    triggers: triggers.map((r) => ({
+      name: String(r.TRIGGER_NAME),
+      type: String(r.TRIGGER_TYPE),
+      event: String(r.TRIGGERING_EVENT),
+      status: String(r.STATUS),
+    })),
   };
 
   // Pending KYCs and a dry run (validation + mapping only, no REIS call, no write).

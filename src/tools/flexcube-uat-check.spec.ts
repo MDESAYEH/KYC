@@ -28,6 +28,7 @@ class FakeUat implements IFlexcubeSqlExecutor {
   connectError: Error | null = null;
   pending: SqlRow[] = [];
   keypersonsError: Error | null = null;
+  diagnosticsError: Error | null = null;
   details = new Map<string, SqlRow>();
 
   async execute(sql: string): Promise<{ rowsAffected: number }> {
@@ -56,7 +57,35 @@ class FakeUat implements IFlexcubeSqlExecutor {
       return [{ N: 7 }];
     }
     if (sql.includes('ALL_TAB_PRIVS')) return this.privileges.map((p) => ({ PRIVILEGE: p }));
-    if (sql.includes('GROUP BY PROCESS_STATUS')) return [{ S: 'S', N: 3 }];
+    if (sql.includes('OWNER_KIND')) {
+      return [
+        { S: 'S', OWNER_KIND: 'OURS', N: 3 },
+        { S: 'N', OWNER_KIND: 'OURS', N: 4 },
+        { S: 'N', OWNER_KIND: 'OTHERS', N: 1 },
+      ];
+    }
+    if (sql.includes('ALL_CONSTRAINTS')) {
+      if (this.diagnosticsError) throw this.diagnosticsError;
+      return [
+        { CONSTRAINT_NAME: 'CK_STATUS', SEARCH_CONDITION: " PROCESS_STATUS IN ('N','S','E') " },
+      ];
+    }
+    if (sql.includes('ALL_TRIGGERS')) {
+      return [
+        {
+          TRIGGER_NAME: 'TRG_STAGING',
+          TRIGGER_TYPE: 'BEFORE EACH ROW',
+          TRIGGERING_EVENT: 'INSERT OR UPDATE',
+          STATUS: 'ENABLED',
+        },
+      ];
+    }
+    if (sql.includes('GROUP BY SUBSTR(KYC_REF_NO')) {
+      return [
+        { BRANCH: '001', N: 40, LATEST: '2026-05-31T01:18:00' },
+        { BRANCH: '002', N: 17, LATEST: null },
+      ];
+    }
     if (sql.includes('FROM STTM_KYC_MASTER m')) return this.pending;
     if (sql.includes('KEYPERSONS') && this.keypersonsError) throw this.keypersonsError;
     if (sql.includes('PRODUCT_CUSTOM')) return [{ PRODUCT_CODE: 'SALR' }];
@@ -127,6 +156,53 @@ describe('UAT1 read-only check', () => {
       error: 'FLEXCUBE_SYNC_START_DATE_MISSING_OR_INVALID',
     });
     expect(db.statements.some((s) => s.includes('FROM STTM_KYC_MASTER m'))).toBe(false);
+  });
+
+  it('reports the staging constraints, triggers and rows per status split into ours / others', async () => {
+    const r = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
+    expect(r.staging).toMatchObject({
+      processStatuses: { S: 3, N: 5 },
+      processStatusesByOwner: { ours: { S: 3, N: 4 }, others: { N: 1 } },
+      checkConstraints: [{ name: 'CK_STATUS', condition: "PROCESS_STATUS IN ('N','S','E')" }],
+      triggers: [
+        {
+          name: 'TRG_STAGING',
+          type: 'BEFORE EACH ROW',
+          event: 'INSERT OR UPDATE',
+          status: 'ENABLED',
+        },
+      ],
+    });
+    // everything stays SELECT only, with the table name as a bind variable
+    expect(db.statements.every((s) => /^\s*SELECT/i.test(s))).toBe(true);
+    const ownerSql = db.statements.find((s) => s.includes('OWNER_KIND'))!;
+    expect(ownerSql).toContain("REGEXP_LIKE(MSGID, '^[0-9a-f]{8}-");
+  });
+
+  it('reports the cut-off in use and the latest maker date per branch', async () => {
+    const r = await runUatCheck(db, STAGING, pipeline, 5, '2026-05-31T01:15:00');
+    expect(r.cutoff).toBe('2026-05-31T01:15:00');
+    expect(r.branches).toEqual([
+      { branch: '001', kycs: 40, latestMakerDate: '2026-05-31T01:18:00' },
+      { branch: '002', kycs: 17, latestMakerDate: null },
+    ]);
+    expect(r.pending).toMatchObject({ total: 0 });
+    const none = await runUatCheck(db, STAGING, pipeline, 5, undefined);
+    expect(none.cutoff).toBeUndefined();
+  });
+
+  it('a failing diagnostic query does not break the report', async () => {
+    db.diagnosticsError = new Error('ORA-00942: no access');
+    const r = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
+    expect(r.staging?.checkConstraints).toEqual([]);
+    expect(r.staging?.triggers).toHaveLength(1);
+  });
+
+  it('the report holds no customer data (technical facts only)', async () => {
+    db.pending = [{ KYC_REF_NO: 'K-OK', KYC_CUST_TYPE: 'R', MOD_NO: 1 }];
+    db.details.set('K-OK', GOOD_INDIVIDUAL);
+    const r = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
+    expect(JSON.stringify(r)).not.toMatch(/Synthetic|Person|amgr|Test001/);
   });
 
   it('expects the configured key-person type column instead of KYC_KEYPERSON_TYPE', async () => {

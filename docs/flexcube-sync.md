@@ -73,6 +73,17 @@ The claim stays conditional (only from `N`), so two instances never send the sam
 The SELECT aliases it back to `KYC_KEYPERSON_TYPE`, and `npm run check:uat1` checks the configured column.
 While the column is wrong, a corporate KYC ends as `E` with the `ORA-00904` code and individuals keep flowing.
 
+## UAT check diagnostics (`npm run check:uat1`, read-only)
+
+Besides the connection, tables and columns, the report (console and `uat1-check-report.json`, no customer
+data) shows, all with SELECT only:
+
+- the CHECK constraints (`ALL_CONSTRAINTS`, type `C`: name and search condition) and the triggers
+  (`ALL_TRIGGERS`: name, type, event, status) of the staging table: where to look when a claim (`N -> W`) fails;
+- the rows per `PROCESS_STATUS`, split into ours (UUID `MSGID`) and others (e.g. Finexta test rows);
+- the pending KYCs with the current `FLEXCUBE_SYNC_START_DATE`, and the latest `MAKER_DT_STAMP` per branch
+  (first 3 characters of `KYC_REF_NO`), to choose the cut-off on UAT.
+
 ## Recovery of stuck rows
 
 At the start of every pass:

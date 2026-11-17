@@ -106,12 +106,29 @@ function print(r: UatCheckReport): void {
       `       granted: ${s.privileges.join(', ') || '(none visible)'}${s.ownedByUser ? ' (table owned by this user)' : ''}`,
     );
     console.log(`       rows by PROCESS_STATUS: ${JSON.stringify(s.processStatuses)}`);
+    console.log(
+      `       ours (UUID MSGID): ${JSON.stringify(s.processStatusesByOwner.ours)}  others: ${JSON.stringify(s.processStatusesByOwner.others)}`,
+    );
+    console.log('\nCHECK constraints of the staging table:');
+    if (s.checkConstraints.length === 0) console.log('  (none visible)');
+    for (const c of s.checkConstraints) console.log(`  ${c.name}: ${c.condition}`);
+    console.log('Triggers of the staging table:');
+    if (s.triggers.length === 0) console.log('  (none visible)');
+    for (const t of s.triggers) console.log(`  ${t.name} (${t.type}, ${t.event}, ${t.status})`);
   }
   if (r.pending) {
     console.log(
       `\nSaved KYCs waiting for REIS: ${r.pending.total} (individual ${r.pending.individual}, corporate ${r.pending.corporate})` +
         (r.pending.error ? ` - ${r.pending.error}` : ''),
     );
+  }
+  if (r.branches?.length) {
+    console.log(
+      `\nCut-off in use: ${r.cutoff ?? '(missing or invalid)'}. Latest MAKER_DT_STAMP per branch:`,
+    );
+    for (const b of r.branches) {
+      console.log(`  ${b.branch}: ${b.latestMakerDate ?? '-'} (${b.kycs} KYCs)`);
+    }
   }
   if (r.dryRun.length) {
     console.log('\nDry run (validation + mapping only, REIS not called, nothing written):');
