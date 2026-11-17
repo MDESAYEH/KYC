@@ -511,6 +511,39 @@ describe('FlexcubeSyncService (one polling pass)', () => {
     expect(workflow.submit).not.toHaveBeenCalled();
   });
 
+  it('claims with the configured in-progress status, still only from N', async () => {
+    const seen: unknown[] = [];
+    const spy = jest.spyOn(db, 'execute');
+    const custom = new FlexcubeSyncService(
+      new FlexcubeKycSource(db, 'STAGE', SINCE),
+      new StagingSubmissionRepository(db, 'STAGE', 'P'),
+      workflow as unknown as IKycWorkflow,
+      20,
+    );
+    expect(await custom.runOnce()).toMatchObject({ sent: 1, failed: 0 });
+    for (const [sql, binds] of spy.mock.calls) {
+      if (sql.includes('SET PROCESS_STATUS = :to')) seen.push(binds);
+    }
+    expect(seen).toEqual([{ to: 'P', from: 'N', kycRefNo: 'K1', seqNo: 2 }]);
+    expect(db.staging[0].PROCESS_STATUS).toBe('S'); // completed from P, not from W
+    // the default is untouched
+    expect(StagingProcessStatus.IN_PROGRESS).toBe('W');
+  });
+
+  it('a row claimed by someone else (any status but N) is not claimed again', async () => {
+    const repo = new StagingSubmissionRepository(db, 'STAGE', 'P');
+    db.staging.push({
+      KYC_REF_NO: 'KX',
+      SEQ_NO: 1,
+      MSGID: 'm',
+      PROCESS_STATUS: 'P',
+      REQUEST: null,
+      RESPONSE: null,
+      RETRY_COUNT: 0,
+    });
+    expect(await repo.claim({ kycRefNo: 'KX', seqNo: 1 })).toBe(false);
+  });
+
   describe('one KYC never stops the pass', () => {
     const CORP_ROW: SqlRow = {
       CRP_BUSINESS_NAME: 'Test Co',
@@ -681,6 +714,7 @@ describe('FLEXCUBE polling configuration and scheduler', () => {
     pollIntervalMs: 120000,
     pollBatchSize: 20,
     syncStartDate: '2026-11-16' as string | undefined,
+    stagingStatusInProgress: 'W',
     ...over,
   });
   const wf = {} as IKycWorkflow;
@@ -705,6 +739,26 @@ describe('FLEXCUBE polling configuration and scheduler', () => {
     expect(
       createFlexcubeSync(new FakeFlexcubeDb(), wf, cfg({ syncStartDate: undefined })),
     ).toBeNull();
+  });
+
+  it('the in-progress status defaults to W and must be one uppercase letter', () => {
+    expect(loadConfiguration({}).flexcube.stagingStatusInProgress).toBe('W');
+    expect(
+      loadConfiguration({ FLEXCUBE_STAGING_STATUS_IN_PROGRESS: 'P' }).flexcube
+        .stagingStatusInProgress,
+    ).toBe('P');
+    for (const bad of ['w', 'WW', '1', ' ', "W'", 'W;']) {
+      expect(() =>
+        createFlexcubeSync(
+          new FakeFlexcubeDb(),
+          wf,
+          cfg({ pollEnabled: true, stagingStatusInProgress: bad }),
+        ),
+      ).toThrow(/FLEXCUBE_STAGING_STATUS_IN_PROGRESS/);
+      expect(() => new StagingSubmissionRepository(new FakeFlexcubeDb(), 'STAGE', bad)).toThrow(
+        /FLEXCUBE_STAGING_STATUS_IN_PROGRESS/,
+      );
+    }
   });
 
   it('loadConfiguration reads FLEXCUBE_SYNC_START_DATE (blank = unset)', () => {

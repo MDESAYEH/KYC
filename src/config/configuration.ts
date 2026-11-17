@@ -44,6 +44,8 @@ export interface AppConfig {
      * STTM_KYC_MASTER.MAKER_DT_STAMP. Mandatory when polling is enabled (validated at startup).
      */
     syncStartDate: string | undefined;
+    /** Staging PROCESS_STATUS of a claimed row (FLEXCUBE_STAGING_STATUS_IN_PROGRESS, default W). */
+    stagingStatusInProgress: string;
   };
   /** Production DB is TBD. sqlite (local dev/test only) is the only supported type for now. */
   database: { type: string; sqlitePath: string | undefined };
@@ -88,6 +90,7 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
       pollIntervalMs: clamp(num(env.FLEXCUBE_POLL_INTERVAL_MS) ?? 120_000, 60_000, 300_000),
       pollBatchSize: clamp(num(env.FLEXCUBE_POLL_BATCH_SIZE) ?? 20, 1, 200),
       syncStartDate: str(env.FLEXCUBE_SYNC_START_DATE),
+      stagingStatusInProgress: str(env.FLEXCUBE_STAGING_STATUS_IN_PROGRESS) ?? 'W',
     },
     database: {
       type: env.DB_TYPE ?? 'sqlite',

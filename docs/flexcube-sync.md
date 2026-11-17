@@ -62,3 +62,16 @@ CUSTOM row is missing, or a mandatory field is missing. Error messages name the 
 ISO date `2026-11-16` or timestamp `2026-11-16T08:00:00`, no time-zone suffix; startup fails with a
 config error when missing or invalid, so historical KYCs are never sent by accident). The database user needs SELECT on the STTM
 tables and INSERT / UPDATE (no DELETE) on the staging table.
+
+`FLEXCUBE_STAGING_STATUS_IN_PROGRESS` (default `W`, one uppercase letter) is the `PROCESS_STATUS` of a
+claimed row, so it can follow Finexta's CHECK constraint on the staging table without a code change.
+The claim stays conditional (only from `N`), so two instances never send the same KYC.
+
+## Errors never stop the pass
+
+Any error after the pending query is handled for that KYC only: it is logged
+(`flexcube.sync.kycFailed`: `kycRefNo`, `seqNo`, step `insert | claim | load | submit | complete`, and the
+Oracle code such as `ORA-02290`, never the message, SQL, binds or customer data), the staging row is
+marked `E` (`RETRY_COUNT + 1`, `RES_DATE`, `RESPONSE = {"error": "<code>"}`) when possible, and the next
+KYC is processed. If marking `E` fails too (`flexcube.sync.markErrorFailed`) the pass still continues.
+Only an error in the pending query itself fails the whole pass (`flexcube.sync.failed`).

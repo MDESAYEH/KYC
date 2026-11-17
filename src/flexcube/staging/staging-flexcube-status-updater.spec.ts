@@ -138,6 +138,7 @@ describe('FLEXCUBE updater selection', () => {
     pollIntervalMs: 120000,
     pollBatchSize: 20,
     syncStartDate: undefined,
+    stagingStatusInProgress: 'W',
     ...over,
   });
   const log = () => ({ warn: jest.fn() });

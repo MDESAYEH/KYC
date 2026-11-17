@@ -8,6 +8,14 @@ export enum StagingProcessStatus {
   ERROR = 'E',
 }
 
+/** The in-progress code is configurable (FLEXCUBE_STAGING_STATUS_IN_PROGRESS): one uppercase letter. */
+export function assertSafeStatusCode(value: string): string {
+  if (!/^[A-Z]$/.test(value)) {
+    throw new Error('FLEXCUBE_STAGING_STATUS_IN_PROGRESS must be one uppercase letter');
+  }
+  return value;
+}
+
 export interface StagingKey {
   kycRefNo: string;
   seqNo: number;
@@ -26,12 +34,16 @@ export interface StagingKey {
  */
 export class StagingSubmissionRepository {
   private readonly table: string;
+  private readonly inProgress: string;
 
+  /** `inProgress` is the claimed-status code (default W; the CHECK constraint is Finexta's). */
   constructor(
     private readonly db: IFlexcubeSqlExecutor,
     table: string,
+    inProgress: string = StagingProcessStatus.IN_PROGRESS,
   ) {
     this.table = assertSafeTableName(table);
+    this.inProgress = assertSafeStatusCode(inProgress);
   }
 
   /** Creates the row in N. Returns false when the row already exists (nothing changed). */
@@ -55,7 +67,7 @@ export class StagingSubmissionRepository {
       `UPDATE ${this.table} SET PROCESS_STATUS = :to, REQ_DATE = SYSDATE ` +
         `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :from`,
       {
-        to: StagingProcessStatus.IN_PROGRESS,
+        to: this.inProgress,
         from: StagingProcessStatus.NEW,
         kycRefNo: key.kycRefNo,
         seqNo: key.seqNo,
@@ -80,7 +92,7 @@ export class StagingSubmissionRepository {
         kycRefNo: key.kycRefNo,
         seqNo: key.seqNo,
         fromNew: StagingProcessStatus.NEW,
-        fromWork: StagingProcessStatus.IN_PROGRESS,
+        fromWork: this.inProgress,
       },
     );
     return rowsAffected === 1;
@@ -108,7 +120,7 @@ export class StagingSubmissionRepository {
         retry,
         kycRefNo: key.kycRefNo,
         seqNo: key.seqNo,
-        from: StagingProcessStatus.IN_PROGRESS,
+        from: this.inProgress,
       },
     );
     if (rowsAffected !== 1) {

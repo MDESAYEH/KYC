@@ -36,9 +36,18 @@ export function createFlexcubeSync(
         '(e.g. 2026-11-16 or 2026-11-16T08:00:00); it is missing or invalid',
     );
   }
+  if (!/^[A-Z]$/.test(flexcube.stagingStatusInProgress)) {
+    throw new FlexcubeSyncConfigError(
+      'FLEXCUBE_STAGING_STATUS_IN_PROGRESS must be one uppercase letter (default W)',
+    );
+  }
   return new FlexcubeSyncService(
     new FlexcubeKycSource(executor, flexcube.stagingTable, flexcube.syncStartDate as string),
-    new StagingSubmissionRepository(executor, flexcube.stagingTable),
+    new StagingSubmissionRepository(
+      executor,
+      flexcube.stagingTable,
+      flexcube.stagingStatusInProgress,
+    ),
     workflow,
     flexcube.pollBatchSize,
   );
