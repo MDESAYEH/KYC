@@ -67,6 +67,18 @@ tables and INSERT / UPDATE (no DELETE) on the staging table.
 claimed row, so it can follow Finexta's CHECK constraint on the staging table without a code change.
 The claim stays conditional (only from `N`), so two instances never send the same KYC.
 
+## Recovery of stuck rows
+
+At the start of every pass:
+
+- **Rows left at `N`** by an earlier failed pass are processed first through the same claim -> load ->
+  submit path (no second INSERT). Only our own rows qualify: `MSGID` in UUID format, `REQ_DATE IS NULL`,
+  `REQUEST IS NULL`, and `KYC_REF_NO` / `SEQ_NO` matching an open KYC in `STTM_KYC_MASTER` since the
+  cut-off. A row with any other `MSGID` (for example Finexta's `TEST123`) is never touched.
+- **Rows stuck in the in-progress status** for more than 15 minutes (our own `MSGID`) are only logged
+  (`flexcube.sync.stuckInProgress`, `kycRefNo`, `seqNo`, once per process and row). They are never resent
+  automatically: the submission may already have reached REIS.
+
 ## Errors never stop the pass
 
 Any error after the pending query is handled for that KYC only: it is logged

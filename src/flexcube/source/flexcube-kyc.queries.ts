@@ -32,6 +32,8 @@
  * Open KYCs created on / after the cut-off (:since, 'YYYY-MM-DDTHH24:MI:SS') whose current
  * modification has no staging row yet. AUTH_STAT is deliberately not filtered.
  */
+import { OWN_MSGID_PATTERN } from '../staging/flexcube-staging';
+
 export const pendingKycSql = (stagingTable: string): string =>
   `SELECT m.KYC_REF_NO, m.KYC_CUST_TYPE, m.MOD_NO
      FROM STTM_KYC_MASTER m
@@ -40,6 +42,25 @@ export const pendingKycSql = (stagingTable: string): string =>
       AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS')
       AND NOT EXISTS (SELECT 1 FROM ${stagingTable} s
                        WHERE s.KYC_REF_NO = m.KYC_REF_NO AND s.SEQ_NO = m.MOD_NO)
+    ORDER BY m.KYC_REF_NO
+    FETCH FIRST :maxRows ROWS ONLY`;
+
+/**
+ * Our own rows left at N by an earlier failed pass (UUID MSGID, never claimed, nothing stored)
+ * whose KYC is still open since the cut-off: same rules as pendingKycSql, same current MOD_NO.
+ * Rows that are not ours (any other MSGID, e.g. a Finexta test row) never match.
+ */
+export const stuckNewKycSql = (stagingTable: string): string =>
+  `SELECT m.KYC_REF_NO, m.KYC_CUST_TYPE, m.MOD_NO
+     FROM STTM_KYC_MASTER m
+     JOIN ${stagingTable} s ON s.KYC_REF_NO = m.KYC_REF_NO AND s.SEQ_NO = m.MOD_NO
+    WHERE s.PROCESS_STATUS = :statusNew
+      AND s.REQ_DATE IS NULL
+      AND s.REQUEST IS NULL
+      AND REGEXP_LIKE(s.MSGID, '${OWN_MSGID_PATTERN}', 'i')
+      AND m.RECORD_STAT = 'O'
+      AND m.KYC_CUST_TYPE IN ('R', 'C')
+      AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS')
     ORDER BY m.KYC_REF_NO
     FETCH FIRST :maxRows ROWS ONLY`;
 

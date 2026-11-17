@@ -63,6 +63,8 @@ export class FakeFlexcubeKycDb implements IFlexcubeSqlExecutor {
   async query(sql: string, b: SqlBinds): Promise<SqlRow[]> {
     this.statements.push(sql);
     if (!/^\s*SELECT/i.test(sql)) throw new Error('only SELECT is allowed in query()');
+    // recovery of our rows left at N and the stuck-in-progress check: nothing in these scenarios
+    if (sql.includes('s.REQ_DATE IS NULL') || sql.includes('REQ_DATE < SYSDATE')) return [];
     if (sql.includes('FROM STTM_KYC_MASTER')) {
       return this.master
         .filter((m) => ['R', 'C'].includes(m.KYC_CUST_TYPE))

@@ -1,4 +1,9 @@
-import { assertSafeTableName, IFlexcubeSqlExecutor, isUniqueViolation } from './flexcube-staging';
+import {
+  assertSafeTableName,
+  IFlexcubeSqlExecutor,
+  isUniqueViolation,
+  OWN_MSGID_PATTERN,
+} from './flexcube-staging';
 
 /** PROCESS_STATUS values agreed with Finexta. */
 export enum StagingProcessStatus {
@@ -96,6 +101,21 @@ export class StagingSubmissionRepository {
       },
     );
     return rowsAffected === 1;
+  }
+
+  /**
+   * Our own rows (UUID MSGID) claimed for more than `minutes` and still not completed. They are
+   * only reported: a possibly half-sent submission is never resent automatically.
+   */
+  async findStuckInProgress(minutes: number, maxRows: number): Promise<StagingKey[]> {
+    const rows = await this.db.query(
+      `SELECT KYC_REF_NO, SEQ_NO FROM ${this.table} ` +
+        `WHERE PROCESS_STATUS = :inProgress AND REQ_DATE < SYSDATE - (:minutes / 1440) ` +
+        `AND REGEXP_LIKE(MSGID, '${OWN_MSGID_PATTERN}', 'i') ` +
+        `ORDER BY KYC_REF_NO FETCH FIRST :maxRows ROWS ONLY`,
+      { inProgress: this.inProgress, minutes, maxRows },
+    );
+    return rows.map((r) => ({ kycRefNo: String(r.KYC_REF_NO), seqNo: Number(r.SEQ_NO) }));
   }
 
   /** W -> S or E, storing the REIS request / response JSON when known. */

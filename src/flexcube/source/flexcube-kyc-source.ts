@@ -13,6 +13,7 @@ import {
   INDIVIDUAL_KYC_SQL,
   INDIVIDUAL_PRODUCTS_SQL,
   pendingKycSql,
+  stuckNewKycSql,
 } from './flexcube-kyc.queries';
 
 /** A saved KYC waiting for REIS; seqNo is the staging SEQ_NO (FLEXCUBE MOD_NO). */
@@ -21,6 +22,12 @@ export interface PendingKyc {
   seqNo: number;
   customerType: 'INDIVIDUAL' | 'CORPORATE';
 }
+
+const toPendingKyc = (r: SqlRow): PendingKyc => ({
+  kycRefNo: String(r.KYC_REF_NO),
+  seqNo: Number(r.MOD_NO),
+  customerType: r.KYC_CUST_TYPE === 'C' ? 'CORPORATE' : 'INDIVIDUAL',
+});
 
 /** The KYC detail rows could not be found (e.g. deleted or not yet committed). */
 export class KycDetailsNotFoundError extends Error {
@@ -78,6 +85,7 @@ const text = (value: unknown): string | undefined => {
  */
 export class FlexcubeKycSource {
   private readonly pendingSql: string;
+  private readonly stuckNewSql: string;
 
   private readonly since: string;
 
@@ -93,15 +101,22 @@ export class FlexcubeKycSource {
     }
     this.since = since;
     this.pendingSql = pendingKycSql(assertSafeTableName(stagingTable));
+    this.stuckNewSql = stuckNewKycSql(stagingTable);
   }
 
   async findPending(maxRows: number): Promise<PendingKyc[]> {
     const rows = await this.db.query(this.pendingSql, { since: this.since, maxRows });
-    return rows.map((r) => ({
-      kycRefNo: String(r.KYC_REF_NO),
-      seqNo: Number(r.MOD_NO),
-      customerType: r.KYC_CUST_TYPE === 'C' ? 'CORPORATE' : 'INDIVIDUAL',
-    }));
+    return rows.map(toPendingKyc);
+  }
+
+  /** Our own staging rows left at N (never claimed) by an earlier failed pass, still open. */
+  async findOwnStuckNew(maxRows: number): Promise<PendingKyc[]> {
+    const rows = await this.db.query(this.stuckNewSql, {
+      statusNew: 'N',
+      since: this.since,
+      maxRows,
+    });
+    return rows.map(toPendingKyc);
   }
 
   async load(pending: PendingKyc): Promise<FlexcubeCustomerRequest> {

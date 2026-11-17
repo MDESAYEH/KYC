@@ -22,6 +22,9 @@ export type SyncStep = 'insert' | 'claim' | 'load' | 'submit' | 'complete';
 
 type Outcome = 'sent' | 'failed' | 'skipped';
 
+/** A row claimed for longer than this is reported (flexcube.sync.stuckInProgress), never resent. */
+export const STUCK_IN_PROGRESS_MINUTES = 15;
+
 /**
  * One polling pass (agreed architecture: the integration layer reads FLEXCUBE, nothing calls in):
  *
@@ -38,6 +41,7 @@ type Outcome = 'sent' | 'failed' | 'skipped';
  */
 export class FlexcubeSyncService {
   private readonly logger = new Logger(FlexcubeSyncService.name);
+  private readonly reportedStuck = new Set<string>();
 
   constructor(
     private readonly source: FlexcubeKycSource,
@@ -47,18 +51,51 @@ export class FlexcubeSyncService {
   ) {}
 
   async runOnce(): Promise<SyncRunSummary> {
+    // Our own rows left at N by an earlier failed pass go first (same claim -> load -> submit path).
+    const stuck = await this.safely('recover', () => this.source.findOwnStuckNew(this.batchSize));
+    await this.reportStuckInProgress();
     const pending = await this.source.findPending(this.batchSize);
-    const summary: SyncRunSummary = { found: pending.length, sent: 0, failed: 0, skipped: 0 };
-    for (const kyc of pending) {
-      const outcome = await this.processOne(kyc);
-      summary[outcome]++;
-    }
-    if (pending.length > 0) this.logger.log({ event: 'flexcube.sync.run', ...summary });
+    const summary: SyncRunSummary = {
+      found: stuck.length + pending.length,
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+    };
+    for (const kyc of stuck) summary[await this.processOne(kyc, true)]++;
+    for (const kyc of pending) summary[await this.processOne(kyc, false)]++;
+    if (summary.found > 0) this.logger.log({ event: 'flexcube.sync.run', ...summary });
     return summary;
   }
 
+  /** Only logged (once per process and row): a half-sent submission is never resent automatically. */
+  private async reportStuckInProgress(): Promise<void> {
+    const rows = await this.safely('stuckCheck', () =>
+      this.staging.findStuckInProgress(STUCK_IN_PROGRESS_MINUTES, 50),
+    );
+    for (const row of rows) {
+      const id = `${row.kycRefNo}/${row.seqNo}`;
+      if (this.reportedStuck.has(id)) continue;
+      this.reportedStuck.add(id);
+      this.logger.warn({
+        event: 'flexcube.sync.stuckInProgress',
+        kycRefNo: row.kycRefNo,
+        seqNo: row.seqNo,
+      });
+    }
+  }
+
+  /** A failing helper query is logged with its code and never fails the pass. */
+  private async safely<T>(what: string, run: () => Promise<T[]>): Promise<T[]> {
+    try {
+      return await run();
+    } catch (error) {
+      this.logger.error({ event: `flexcube.sync.${what}Failed`, error: oraCode(error) });
+      return [];
+    }
+  }
+
   /** Never throws: a failure is logged and, when a staging row exists, the row is marked E. */
-  private async processOne(kyc: PendingKyc): Promise<Outcome> {
+  private async processOne(kyc: PendingKyc, recovering: boolean): Promise<Outcome> {
     const key: StagingKey = { kycRefNo: kyc.kycRefNo, seqNo: kyc.seqNo };
     if (!Number.isInteger(kyc.seqNo) || kyc.seqNo < 1) {
       this.logger.warn({ event: 'flexcube.sync.invalidSeqNo', kycRefNo: kyc.kycRefNo });
@@ -67,7 +104,8 @@ export class FlexcubeSyncService {
     let step: SyncStep = 'insert';
     try {
       // Another instance may have taken it: insert and claim are both conditional.
-      if (!(await this.staging.insertNew(key, randomUUID()))) return 'skipped';
+      // A recovered row already exists (left at N): it goes straight to the claim.
+      if (!recovering && !(await this.staging.insertNew(key, randomUUID()))) return 'skipped';
       step = 'claim';
       if (!(await this.staging.claim(key))) return 'skipped';
       step = 'load';

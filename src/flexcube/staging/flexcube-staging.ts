@@ -50,6 +50,11 @@ export interface IFlexcubeSqlExecutor {
 export function isUniqueViolation(error: unknown): boolean {
   return error instanceof Error && /ORA-00001/.test(error.message);
 }
+/**
+ * MSGID of a row created by this integration layer (a random UUID). Rows with any other MSGID
+ * (e.g. Finexta's test row) are never touched. Used in REGEXP_LIKE(MSGID, pattern, 'i').
+ */
+export const OWN_MSGID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
 export const FLEXCUBE_SQL_EXECUTOR = Symbol('IFlexcubeSqlExecutor');
 
 /** Only plain Oracle identifiers (optionally schema-qualified) may be used as the table name. */
