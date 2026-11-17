@@ -64,6 +64,28 @@ export class StagingSubmissionRepository {
     return rowsAffected === 1;
   }
 
+  /**
+   * N or W -> E for a submission that failed at any step (including the claim itself): RETRY_COUNT
+   * + 1, RESPONSE = the technical code, RES_DATE = now. False when no such row was left.
+   */
+  async fail(key: StagingKey, response: object): Promise<boolean> {
+    const { rowsAffected } = await this.db.execute(
+      `UPDATE ${this.table} SET PROCESS_STATUS = :status, RESPONSE = :response, ` +
+        `RETRY_COUNT = NVL(RETRY_COUNT, 0) + 1, RES_DATE = SYSDATE ` +
+        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo ` +
+        `AND PROCESS_STATUS IN (:fromNew, :fromWork)`,
+      {
+        status: StagingProcessStatus.ERROR,
+        response: JSON.stringify(response),
+        kycRefNo: key.kycRefNo,
+        seqNo: key.seqNo,
+        fromNew: StagingProcessStatus.NEW,
+        fromWork: StagingProcessStatus.IN_PROGRESS,
+      },
+    );
+    return rowsAffected === 1;
+  }
+
   /** W -> S or E, storing the REIS request / response JSON when known. */
   async complete(
     key: StagingKey,
