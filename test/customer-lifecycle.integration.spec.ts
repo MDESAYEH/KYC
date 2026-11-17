@@ -57,6 +57,9 @@ const individual = (kyc: string): FlexcubeCustomerRequest => ({
   },
 });
 
+// Booting the whole app twice (restart scenarios) can exceed Jest's 5 s default when the full suite runs in parallel.
+jest.setTimeout(30_000);
+
 describe('Task 5 - customer lifecycle after the REIS answer', () => {
   let dir: string;
   let server: FakeReisServer;

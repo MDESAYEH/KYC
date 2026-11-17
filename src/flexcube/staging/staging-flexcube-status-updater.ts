@@ -10,7 +10,7 @@ import {
 /** No staging row could be updated for the KYC (missing row, or a different final status). */
 export class StagingRowNotUpdatedError extends Error {
   constructor(readonly kycRefNo: string) {
-    super(`No staging row updated for KYC ${kycRefNo}`);
+    super('No staging row was updated for the KYC (the reference is not repeated here)');
     this.name = 'StagingRowNotUpdatedError';
   }
 }
@@ -44,6 +44,6 @@ export class StagingFlexcubeStatusUpdater implements IFlexcubeStatusUpdater {
       kycRefNo: update.kycRefNo,
     });
     if (rowsAffected !== 1) throw new StagingRowNotUpdatedError(update.kycRefNo);
-    this.logger.log({ event: 'flexcube.staging.finalStatus', kycRefNo: update.kycRefNo, status });
+    this.logger.log({ event: 'flexcube.staging.finalStatus', status });
   }
 }
