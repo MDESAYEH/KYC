@@ -1,3 +1,5 @@
+> **CIF requirement update — 17 November 2026:** Statements below equating primary REIS `systemId` with `KYC_REF_NO` describe the historical baseline and are superseded. The required customer identity is CIF; its Oracle source, lifecycle, historical identity reconciliation and revision/callback contract are still unverified. The current application holds all new submissions; historical callbacks remain supported. See [CIF preparation and blockers](reis-cif-identity.md).
+
 # External decisions required
 
 Only open decisions that someone outside the development team must make. Code is frozen; nothing here is implemented beyond the "current temporary behavior" column.

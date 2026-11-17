@@ -3,6 +3,9 @@ import { FlexcubeStatusUpdate } from '../dto/flexcube-status-update';
 import { IFlexcubeStatusUpdater } from '../flexcube.interfaces';
 import {
   assertSafeTableName,
+  DecisionValues,
+  decisionValues,
+  FinalStatusVocabulary,
   IFlexcubeSqlExecutor,
   toStagingFinalStatus,
 } from './flexcube-staging';
@@ -23,26 +26,42 @@ export class StagingRowNotUpdatedError extends Error {
  */
 export class StagingFlexcubeStatusUpdater implements IFlexcubeStatusUpdater {
   private readonly logger = new Logger(StagingFlexcubeStatusUpdater.name);
-  private readonly sql: string;
+  private readonly latestSql: string;
+  private readonly exactSql: string;
+  private readonly words: DecisionValues;
 
   constructor(
     private readonly db: IFlexcubeSqlExecutor,
     table: string,
+    private readonly vocabulary: FinalStatusVocabulary = 'approved-blocked',
   ) {
     const t = assertSafeTableName(table);
-    this.sql =
+    this.words = decisionValues(vocabulary);
+    // A final decision may replace the interim PENDING (only in the vocabulary that writes it); it never
+    // replaces another final decision.
+    const replaceable = this.words.pending !== null ? ' OR REIS_FINAL_STATUS = :pendingStatus' : '';
+    const guard = `AND (REIS_FINAL_STATUS IS NULL OR REIS_FINAL_STATUS = :finalStatus${replaceable})`;
+    this.latestSql =
       `UPDATE ${t} SET REIS_FINAL_STATUS = :finalStatus ` +
       `WHERE KYC_REF_NO = :kycRefNo ` +
       `AND SEQ_NO = (SELECT MAX(SEQ_NO) FROM ${t} WHERE KYC_REF_NO = :kycRefNo) ` +
-      `AND (REIS_FINAL_STATUS IS NULL OR REIS_FINAL_STATUS = :finalStatus)`;
+      guard;
+    this.exactSql =
+      `UPDATE ${t} SET REIS_FINAL_STATUS = :finalStatus ` +
+      `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo ` +
+      guard;
   }
 
   async updateStatus(update: FlexcubeStatusUpdate): Promise<void> {
-    const status = toStagingFinalStatus(update.finalStatus);
-    const { rowsAffected } = await this.db.execute(this.sql, {
+    const status = toStagingFinalStatus(update.finalStatus, this.vocabulary);
+    const exact = update.seqNo !== undefined;
+    const binds: Record<string, string | number> = {
       finalStatus: status,
       kycRefNo: update.kycRefNo,
-    });
+    };
+    if (exact) binds.seqNo = update.seqNo as number;
+    if (this.words.pending !== null) binds.pendingStatus = this.words.pending;
+    const { rowsAffected } = await this.db.execute(exact ? this.exactSql : this.latestSql, binds);
     if (rowsAffected !== 1) throw new StagingRowNotUpdatedError(update.kycRefNo);
     this.logger.log({ event: 'flexcube.staging.finalStatus', status });
   }

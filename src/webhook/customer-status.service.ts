@@ -13,6 +13,7 @@ import {
 } from '../persistence/webhook-event';
 import { CustomerStatusDto } from './dto/customer-status.dto';
 import { IWebhookSecurityStrategy, WEBHOOK_SECURITY_STRATEGY } from './webhook.interfaces';
+import { singleTrialCallbackIsHeld } from '../kyc/single-kyc-trial.scope';
 
 export type CustomerStatusResult = Exclude<WebhookProcessingResult, 'PROCESSING'>;
 
@@ -107,6 +108,15 @@ export class CustomerStatusService {
 
     // 4. Correlate by systemId and apply the final status idempotently.
     const dto = plainToInstance(CustomerStatusDto, raw);
+    // The single-record trial identities are quarantined: no status update, no business effect, until
+    // the exact-revision callback route is implemented and verified (docs/codex-single-trial-handoff.md).
+    if (singleTrialCallbackIsHeld(dto.systemId)) {
+      const done = await this.events.complete(event.eventId, {
+        processingResult: 'RECONCILIATION_REQUIRED',
+        detailCode: 'SINGLE_TRIAL_CALLBACK_QUARANTINED',
+      });
+      return this.finish(done, 'RECONCILIATION_REQUIRED');
+    }
     const applied = await this.cases.applyFinalStatus(dto.systemId, dto.status, dto.customerId);
     const kycCase = applied.kycCase;
     const caseId = kycCase?.internalId ?? null;
@@ -191,6 +201,7 @@ export class CustomerStatusService {
         kycRefNo: kycCase.kycRefNo,
         customerNo: kycCase.customerNo,
         finalStatus: dto.status,
+        seqNo: kycCase.seqNo,
         reisCustomerId: kycCase.reisCustomerId ?? undefined,
         idempotencyKey: `${kycCase.internalId}:${dto.status}`,
       });

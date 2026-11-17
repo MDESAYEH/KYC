@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import { AppConfig } from '../../config/configuration';
 import { IFlexcubeStatusUpdater } from '../flexcube.interfaces';
 import { MockFlexcubeStatusUpdater } from '../mock-flexcube-status-updater';
-import { IFlexcubeSqlExecutor } from './flexcube-staging';
+import { FinalStatusVocabulary, IFlexcubeSqlExecutor } from './flexcube-staging';
 import { OracleSqlExecutor } from './oracle-sql-executor';
 import { StagingFlexcubeStatusUpdater } from './staging-flexcube-status-updater';
 
@@ -43,7 +43,13 @@ export function createFlexcubeStatusUpdater(
   nodeEnv: string,
   logger: Pick<Logger, 'warn'> = new Logger('FlexcubeStatusUpdater'),
 ): IFlexcubeStatusUpdater {
-  if (executor) return new StagingFlexcubeStatusUpdater(executor, flexcube.stagingTable);
+  if (executor) {
+    return new StagingFlexcubeStatusUpdater(
+      executor,
+      flexcube.stagingTable,
+      flexcube.finalStatusVocabulary as FinalStatusVocabulary, // validated by decisionValues()
+    );
+  }
   if (nodeEnv === 'production') {
     throw new FlexcubeDbConfigError(
       'The FLEXCUBE database (FLEXCUBE_DB_*) must be configured in production',

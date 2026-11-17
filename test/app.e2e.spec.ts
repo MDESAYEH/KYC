@@ -8,6 +8,7 @@ import { FlexcubeCustomerRequest } from '../src/flexcube/dto/flexcube-customer.r
 import { FLEXCUBE_STATUS_UPDATER } from '../src/flexcube/flexcube.interfaces';
 import { MockFlexcubeStatusUpdater } from '../src/flexcube/mock-flexcube-status-updater';
 import { KYC_WORKFLOW, IKycWorkflow } from '../src/kyc/kyc.interfaces';
+import { KycWorkflow } from '../src/kyc/kyc.workflow';
 import { KYC_CASE_REPOSITORY, IKycCaseRepository } from '../src/persistence/persistence.interfaces';
 import {
   IReferenceMappingRepository,
@@ -86,8 +87,11 @@ describe('end to end on the real AppModule: submit -> PENDING -> /customerStatus
     }
   });
 
-  const boot = async () => {
-    mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
+  const boot = async (historicalBaseline = false) => {
+    const builder = Test.createTestingModule({ imports: [AppModule] });
+    // Explicit historical regression harness only. Default application keeps the CIF hold.
+    if (historicalBaseline) builder.overrideProvider(KYC_WORKFLOW).useClass(KycWorkflow);
+    mod = await builder.compile();
     app = configureApp(mod.createNestApplication());
     await app.listen(0, '127.0.0.1');
     const ds = mod.get(DataSource, { strict: false });
@@ -117,9 +121,9 @@ describe('end to end on the real AppModule: submit -> PENDING -> /customerStatus
       body: JSON.stringify(body),
     });
 
-  it('runs the full flow with the explicit development security strategy', async () => {
+  it('runs the historical baseline with the explicit development security strategy', async () => {
     process.env.WEBHOOK_SECURITY_MODE = 'unrestricted-dev';
-    const { base, workflow, cases, updater } = await boot();
+    const { base, workflow, cases, updater } = await boot(true);
     server.onboardingHandler = (req, tokens) =>
       tokens.includes(String(req.headers['x-auth-token']))
         ? {
@@ -174,9 +178,9 @@ describe('end to end on the real AppModule: submit -> PENDING -> /customerStatus
     expect(server.requestsTo('/onboarding/v2/searchOnboardCustomer')).toHaveLength(1);
   });
 
-  it('a case that REIS answered CLEAN is not turned into CUSTOMER/BLOCKED by a callback', async () => {
+  it('a historical CLEAN case is not turned into CUSTOMER/BLOCKED by a callback', async () => {
     process.env.WEBHOOK_SECURITY_MODE = 'unrestricted-dev';
-    const { base, workflow, cases, updater } = await boot();
+    const { base, workflow, cases, updater } = await boot(true);
     server.onboardingHandler = (req, tokens) =>
       tokens.includes(String(req.headers['x-auth-token']))
         ? { status: 200, body: { status: 'CLEAN' } }

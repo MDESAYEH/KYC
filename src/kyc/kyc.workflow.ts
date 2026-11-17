@@ -232,6 +232,7 @@ export class KycWorkflow implements IKycWorkflow {
         kycRefNo: kycCase.kycRefNo,
         customerNo: kycCase.customerNo,
         finalStatus: kycCase.finalStatus,
+        seqNo: kycCase.seqNo,
         reisCustomerId: kycCase.reisCustomerId ?? undefined,
         idempotencyKey: `${kycCase.internalId}:${kycCase.finalStatus}`,
       });

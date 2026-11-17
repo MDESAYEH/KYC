@@ -1,3 +1,5 @@
+> **Submission hold (CIF preparation):** new onboarding is blocked pending Finexta/Vneuron identity decisions. Keep polling disabled. Offline CIF previews do not authorize sending. See [CIF preparation and blockers](docs/reis-cif-identity.md) and [read-only discovery SQL](docs/cif-source-discovery.sql).
+
 # KYC Integration API (FLEXCUBE <-> REIS)
 
 Bank integration layer between **Oracle FLEXCUBE** and the **REIS** KYC service (KYC scope only).

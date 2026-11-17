@@ -20,7 +20,7 @@ import {
   DuplicateKycCaseError,
   KycCaseNotFoundError,
 } from './persistence.errors';
-import { IKycCaseRepository } from './persistence.interfaces';
+import { AmendmentOptions, IKycCaseRepository } from './persistence.interfaces';
 
 const MAX_ERROR_CODE = 100;
 const MAX_ERROR_MESSAGE = 1000;
@@ -233,7 +233,19 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
     internalId: string,
     seqNo: number,
     customerType: CustomerType,
+    options: AmendmentOptions = {},
   ): Promise<KycCase | null> {
+    // Quiet period (opt-in, default none): a REIS decision that is final may still be repeated by a late
+    // callback (REIS retries until it gets a 200). The callback carries no revision, so it would be
+    // applied to the NEXT revision of the same identity. Holding the next revision for a while after
+    // the final decision lets such repeats drain first. Held = null, nothing changed.
+    const quiet = options.quietPeriodMs ?? 0;
+    const cutoff = new Date((options.now ?? new Date()).getTime() - quiet);
+    const cutoffText = cutoff.toISOString().replace('T', ' ').replace('Z', '');
+    const finalCondition =
+      quiet > 0
+        ? '(final_status IS NOT NULL AND final_status_at <= :quietCutoff)'
+        : 'final_status IS NOT NULL';
     // Only a closed previous submission may be replaced: a final decision exists, or REIS was never
     // reached / refused it permanently. A submission still in progress is never overwritten.
     const res = await this.dataSource
@@ -264,12 +276,13 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
         lastErrorMessage: null,
       })
       .where(
-        'internal_id = :internalId AND seq_no < :seqNo AND (final_status IS NOT NULL OR ' +
+        `internal_id = :internalId AND seq_no < :seqNo AND (${finalCondition} OR ` +
           'internal_request_status IN (:...closed))',
         {
           internalId,
           seqNo,
           closed: [KycRequestStatus.VALIDATION_FAILED, KycRequestStatus.FAILED_PERMANENT],
+          ...(quiet > 0 ? { quietCutoff: cutoffText } : {}),
         },
       )
       .execute();

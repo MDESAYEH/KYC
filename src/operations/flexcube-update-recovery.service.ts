@@ -79,6 +79,7 @@ export class FlexcubeUpdateRecoveryService implements IFlexcubeUpdateRecoverySer
         kycRefNo: claimed.kycRefNo,
         customerNo: claimed.customerNo,
         finalStatus: claimed.finalStatus as NonNullable<KycCase['finalStatus']>,
+        seqNo: claimed.seqNo,
         reisCustomerId: claimed.reisCustomerId ?? undefined,
         // Same key as the original attempt, so a real updater can deduplicate.
         idempotencyKey: `${claimed.internalId}:${claimed.finalStatus}`,

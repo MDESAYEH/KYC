@@ -51,9 +51,9 @@ export interface SubmissionFailed {
   code: string;
   /** Diagnostic only: true when the onboarding request may have been received by REIS. */
   requestMayHaveReachedReis: boolean;
-  /** Internal status the case was left in (VALIDATION_FAILED, FAILED_*, DELIVERY_UNCERTAIN). */
+  /** Failure status; a submission hold has no persisted case (kycCase is null). */
   persistedStatus: KycRequestStatus;
-  /** Null only when nothing identifiable could be persisted (no usable KYC_REF_NO/customer type). */
+  /** Also null for a CIF submission hold, which intentionally writes no case. */
   kycCase: KycCase | null;
   /** Body that was (or would have been) sent to REIS, when transformation succeeded. */
   reisRequest?: object;

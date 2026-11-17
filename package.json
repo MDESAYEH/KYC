@@ -22,7 +22,9 @@
     "check:uat1": "nest build && node dist/tools/check-flexcube-uat.js",
     "reconcile:staging": "nest build && node dist/tools/reconcile-staging.js",
     "staging:requeue": "nest build && node dist/tools/reconcile-staging.js",
-    "backup:sqlite": "nest build && node dist/tools/backup-sqlite.js"
+    "backup:sqlite": "nest build && node dist/tools/backup-sqlite.js",
+    "trial:one": "nest build && node dist/tools/run-single-kyc-trial.js",
+    "discover:uat1": "node dist/tools/run-readonly-discovery.js"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

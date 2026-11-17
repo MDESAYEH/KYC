@@ -23,13 +23,50 @@ export enum StagingFinalStatus {
   BLOCKED = 'BLOCKED',
 }
 
-/** REIS CUSTOMER -> APPROVED (no customer number is sent), BLOCKED -> BLOCKED. */
-export function toStagingFinalStatus(status: ReisFinalStatus): StagingFinalStatus {
+/**
+ * The words FLEXCUBE reads in REIS_FINAL_STATUS. Two vocabularies exist in the project history:
+ *  - approved-blocked (Finexta 10/11/2026, the DEFAULT until the new one is confirmed in writing together
+ *    with the table constraints and the FLEXCUBE logic that consumes the column): APPROVED / BLOCKED;
+ *  - clean-pending-blocked (stated by Finexta on 17/11/2026, NOT yet confirmed against the real
+ *    constraints): CLEAN / PENDING / BLOCKED. PENDING is written when REIS answers PENDING, so FLEXCUBE can
+ *    tell "waiting for REIS" from "not processed" (NULL); a later final decision replaces PENDING.
+ */
+export type FinalStatusVocabulary = 'approved-blocked' | 'clean-pending-blocked';
+
+export interface DecisionValues {
+  approved: string;
+  blocked: string;
+  /** null: the vocabulary has no interim word (PENDING is never written). */
+  pending: string | null;
+}
+
+export function decisionValues(vocabulary: FinalStatusVocabulary): DecisionValues {
+  switch (vocabulary) {
+    case 'approved-blocked':
+      return { approved: 'APPROVED', blocked: 'BLOCKED', pending: null };
+    case 'clean-pending-blocked':
+      return { approved: 'CLEAN', blocked: 'BLOCKED', pending: 'PENDING' };
+    default:
+      throw new Error(
+        'FLEXCUBE_FINAL_STATUS_VOCABULARY must be approved-blocked or clean-pending-blocked',
+      );
+  }
+}
+
+/**
+ * REIS CUSTOMER -> approved word (APPROVED, or CLEAN in the new vocabulary), BLOCKED -> BLOCKED.
+ * An unknown status is never mapped (no default: Timeout is not PENDING, a failure is not APPROVED).
+ */
+export function toStagingFinalStatus(
+  status: ReisFinalStatus,
+  vocabulary: FinalStatusVocabulary = 'approved-blocked',
+): string {
+  const words = decisionValues(vocabulary);
   switch (status) {
     case ReisFinalStatus.CUSTOMER:
-      return StagingFinalStatus.APPROVED;
+      return words.approved;
     case ReisFinalStatus.BLOCKED:
-      return StagingFinalStatus.BLOCKED;
+      return words.blocked;
     default:
       throw new Error(`Unsupported REIS final status "${String(status)}"`);
   }

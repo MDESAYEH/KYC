@@ -116,9 +116,9 @@ export class FlexcubeCorporateDto {
 }
 
 export class FlexcubeCustomerRequest {
-  /** CONFIRMED: FLEXCUBE KYC reference number; REIS systemId. */
+  /** Internal KYC reference; the historical REIS identity rule is superseded by the CIF requirement. */
   @IsString() @IsNotEmpty() KYC_REF_NO: string;
-  /** CONFIRMED to exist later; null/absent until the customer is created. */
+  /** Candidate CIF; source/lifecycle unverified. Missing CIF must never be replaced by KYC_REF_NO. */
   @IsOptional() @IsString() CUSTOMER_NO?: string;
   @IsIn(['INDIVIDUAL', 'CORPORATE']) CUSTOMER_TYPE: 'INDIVIDUAL' | 'CORPORATE';
   @IsString() @IsNotEmpty() ACCOUNT_MANAGER_LOGIN: string;

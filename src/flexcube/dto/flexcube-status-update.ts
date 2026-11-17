@@ -6,6 +6,11 @@ export interface FlexcubeStatusUpdate {
   customerNo: string | null;
   finalStatus: ReisFinalStatus;
   reisCustomerId?: number;
+  /**
+   * The exact submission (staging SEQ_NO) the decision belongs to. When given, only that revision is
+   * updated; when absent the latest SEQ_NO of the KYC is (historical behavior).
+   */
+  seqNo?: number;
   /** Internal idempotency key so a real updater can safely ignore duplicates. */
   idempotencyKey: string;
 }

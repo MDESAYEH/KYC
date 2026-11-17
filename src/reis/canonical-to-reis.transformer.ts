@@ -59,6 +59,8 @@ export const DEFAULT_DOCUMENT_TYPE = 'PASS';
 const LATIN_NAME = /^[A-Za-z .'-]+$/;
 
 @Injectable()
+// Historical field-mapping baseline, also used by CifOnboardingPreview. The application submission
+// entry point is held; this transformer must not be wired back to sending under the new CIF rule.
 export class CanonicalToReisTransformer implements ICanonicalToReisTransformer {
   constructor(
     @Inject(REFERENCE_MAPPING_SERVICE) private readonly refs: IReferenceMappingService,

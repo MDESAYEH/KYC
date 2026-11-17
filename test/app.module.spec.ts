@@ -3,7 +3,7 @@ import { AppModule } from '../src/app.module';
 import { FLEXCUBE_STATUS_UPDATER } from '../src/flexcube/flexcube.interfaces';
 import { MockFlexcubeStatusUpdater } from '../src/flexcube/mock-flexcube-status-updater';
 import { KYC_WORKFLOW } from '../src/kyc/kyc.interfaces';
-import { KycWorkflow } from '../src/kyc/kyc.workflow';
+import { CifSubmissionHoldWorkflow } from '../src/kyc/cif-submission-hold.workflow';
 import { ReisConfigError } from '../src/reis/reis.errors';
 import { REIS_AUTH_CLIENT, REIS_ONBOARDING_CLIENT } from '../src/reis/reis.interfaces';
 import { ReisAuthClient } from '../src/reis/reis-auth.client';
@@ -40,7 +40,7 @@ describe('AppModule wiring and startup configuration', () => {
     );
     expect(mod.get(REIS_AUTH_CLIENT, { strict: false })).toBeInstanceOf(ReisAuthClient);
     expect(mod.get(REIS_ONBOARDING_CLIENT, { strict: false })).toBeInstanceOf(ReisOnboardingClient);
-    expect(mod.get(KYC_WORKFLOW, { strict: false })).toBeInstanceOf(KycWorkflow);
+    expect(mod.get(KYC_WORKFLOW, { strict: false })).toBeInstanceOf(CifSubmissionHoldWorkflow);
     await mod.close();
   });
 

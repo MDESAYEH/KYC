@@ -48,6 +48,12 @@ export interface AppConfig {
     stagingStatusInProgress: string;
     /** Column of STTM_KYC_CORP_KEYPERSONS holding the party type I / C (FLEXCUBE_KEYPERSON_TYPE_COLUMN). */
     keypersonTypeColumn: string;
+    /**
+     * Words written to REIS_FINAL_STATUS (FLEXCUBE_FINAL_STATUS_VOCABULARY): 'approved-blocked' (default,
+     * Finexta 10/11/2026) or 'clean-pending-blocked' (stated 17/11/2026, not yet confirmed against the real
+     * constraints). Validated when the status updater is built.
+     */
+    finalStatusVocabulary: string;
   };
   /** Production DB is TBD. sqlite (local dev/test only) is the only supported type for now. */
   database: { type: string; sqlitePath: string | undefined };
@@ -94,6 +100,7 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
       syncStartDate: str(env.FLEXCUBE_SYNC_START_DATE),
       stagingStatusInProgress: str(env.FLEXCUBE_STAGING_STATUS_IN_PROGRESS) ?? 'W',
       keypersonTypeColumn: str(env.FLEXCUBE_KEYPERSON_TYPE_COLUMN) ?? 'KYC_KEYPERSON_TYPE',
+      finalStatusVocabulary: str(env.FLEXCUBE_FINAL_STATUS_VOCABULARY) ?? 'approved-blocked',
     },
     database: {
       type: env.DB_TYPE ?? 'sqlite',

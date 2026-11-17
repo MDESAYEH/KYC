@@ -11,6 +11,7 @@ import { FlexcubeCustomerRequest } from '../src/flexcube/dto/flexcube-customer.r
 import { FLEXCUBE_STATUS_UPDATER } from '../src/flexcube/flexcube.interfaces';
 import { StagingFlexcubeStatusUpdater } from '../src/flexcube/staging/staging-flexcube-status-updater';
 import { IKycWorkflow, KYC_WORKFLOW } from '../src/kyc/kyc.interfaces';
+import { KycWorkflow } from '../src/kyc/kyc.workflow';
 import {
   IReferenceMappingRepository,
   REFERENCE_MAPPING_REPOSITORY,
@@ -28,8 +29,8 @@ import { FakeStagingDb } from './support/fake-staging-db';
  * Task 5 - customer lifecycle after the REIS answer, on the real AppModule over real HTTP:
  * file-based SQLite (survives restarts), agreed reference lists, Bearer-protected webhook,
  * real StagingFlexcubeStatusUpdater writing an in-memory FLEXCUBE staging table.
- * The systemId used is the current rule (KYC_REF_NO): this proves consistency of the
- * implementation, not the still-open business decision (customer number vs KYC reference).
+ * The baseline harness uses historical KYC_REF_NO identities to verify old callback behavior.
+ * The separate current-application test leaves the CIF submission hold in place.
  */
 const TOKEN = 'synthetic-bearer-token-0123456789-abcdefXYZ'; // test only
 const ONBOARDING = '/onboarding/v2/searchOnboardCustomer';
@@ -83,11 +84,14 @@ describe('Task 5 - customer lifecycle after the REIS answer', () => {
     'WEBHOOK_BEARER_TOKEN',
   ];
 
-  const boot = async () => {
-    mod = await Test.createTestingModule({ imports: [AppModule] })
+  const boot = async (historicalBaseline = true) => {
+    const builder = Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(FLEXCUBE_STATUS_UPDATER)
-      .useValue(new StagingFlexcubeStatusUpdater(staging, 'STTM_KYC_REIS_PAYLOAD_CUSTOM'))
-      .compile();
+      .useValue(new StagingFlexcubeStatusUpdater(staging, 'STTM_KYC_REIS_PAYLOAD_CUSTOM'));
+    // Historical callbacks remain regression-tested with a LOCAL TEST ONLY legacy override.
+    // boot(false) leaves the actual application KYC_WORKFLOW binding untouched.
+    if (historicalBaseline) builder.overrideProvider(KYC_WORKFLOW).useClass(KycWorkflow);
+    mod = await builder.compile();
     app = configureApp(mod.createNestApplication());
     await app.listen(0, '127.0.0.1');
     ds = mod.get(DataSource, { strict: false });
@@ -112,6 +116,23 @@ describe('Task 5 - customer lifecycle after the REIS answer', () => {
     await shutdown();
     await boot();
   };
+
+  it('the current application holds submissions with missing or unverified CIF without any external call', async () => {
+    await shutdown();
+    await boot(false);
+    const before = server.requests.length;
+    expect(await workflow.submit(individual('CIF-HOLD'))).toMatchObject({
+      code: 'MISSING_CIF',
+      kycCase: null,
+    });
+    expect(
+      await workflow.submit({ ...individual('CIF-HOLD'), CUSTOMER_NO: '000045' }),
+    ).toMatchObject({ code: 'CIF_CUTOVER_NOT_APPROVED', kycCase: null });
+    expect(server.requests).toHaveLength(before);
+    expect(await cases.findByKycRefNo('CIF-HOLD')).toBeNull();
+    await shutdown();
+    await boot(); // restore the historical callback regression harness for the remaining tests
+  });
 
   const callback = (body: unknown, auth: string | null = `Bearer ${TOKEN}`) =>
     fetch(`${base}/customerStatus`, {

@@ -11,6 +11,17 @@ import {
 } from './kyc-case';
 import { KycRequestStatus } from '../common/kyc-status';
 
+/** Options of IKycCaseRepository.reopenForAmendment. */
+export interface AmendmentOptions {
+  /**
+   * Hold the next revision of an identity for this long after the previous final decision (0 / absent =
+   * no hold, the historical behavior). See the quiet-period note in the TypeORM implementation.
+   */
+  quietPeriodMs?: number;
+  /** Clock for tests. */
+  now?: Date;
+}
+
 /**
  * Persistence for KYC correlation, audit and retry state. Independent of the database
  * technology: implementations (TypeORM today) stay inside the persistence module.
@@ -58,6 +69,7 @@ export interface IKycCaseRepository {
     internalId: string,
     seqNo: number,
     customerType: CustomerType,
+    options?: AmendmentOptions,
   ): Promise<KycCase | null>;
   /** The REIS outcome is unknown: status DELIVERY_UNCERTAIN, error recorded, retryCount unchanged. */
   recordDeliveryUncertain(internalId: string, error: CaseError): Promise<KycCase>;

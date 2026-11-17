@@ -11,6 +11,7 @@ import {
 import { StagingSubmissionRepository } from '../flexcube/staging/staging-submission.repository';
 import { IKycWorkflow, KYC_WORKFLOW } from '../kyc/kyc.interfaces';
 import { KycModule } from '../kyc/kyc.module';
+import { CifSubmissionHoldWorkflow } from '../kyc/cif-submission-hold.workflow';
 import { FlexcubeSyncScheduler } from './flexcube-sync.scheduler';
 import { FlexcubeSyncService } from './flexcube-sync.service';
 
@@ -28,6 +29,11 @@ export function createFlexcubeSync(
   flexcube: AppConfig['flexcube'],
 ): FlexcubeSyncService | null {
   if (!flexcube.pollEnabled) return null;
+  if (workflow instanceof CifSubmissionHoldWorkflow) {
+    throw new FlexcubeSyncConfigError(
+      'Polling must remain disabled until CIF source and identity cutover are approved',
+    );
+  }
   if (!executor) {
     throw new FlexcubeSyncConfigError(
       'FLEXCUBE_POLL_ENABLED=true requires the FLEXCUBE database (FLEXCUBE_DB_*)',

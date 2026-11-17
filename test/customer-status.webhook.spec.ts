@@ -147,6 +147,7 @@ describe('POST /customerStatus (real HTTP, real SQLite repositories)', () => {
           kycRefNo: 'K-1',
           customerNo: null,
           finalStatus: 'CUSTOMER',
+          seqNo: 1, // the exact submission, not MAX(SEQ_NO)
           reisCustomerId: 555,
           idempotencyKey: `${c.internalId}:CUSTOMER`,
         },

@@ -1,3 +1,5 @@
+> **CIF requirement update — 17 November 2026:** Statements below equating primary REIS `systemId` with `KYC_REF_NO` describe the historical baseline and are superseded. The required customer identity is CIF; its Oracle source, lifecycle, historical identity reconciliation and revision/callback contract are still unverified. The current application holds all new submissions; historical callbacks remain supported. See [CIF preparation and blockers](reis-cif-identity.md).
+
 # Confirmed vs TBD requirements (KYC scope only - AML is out of scope)
 
 Rule: nothing in the TBD table is invented. Each item is isolated behind an interface or configuration.

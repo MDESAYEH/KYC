@@ -13,9 +13,9 @@ import { CustomerType } from './customer-type';
  */
 export interface CanonicalKycBase {
   readonly customerType: CustomerType;
-  /** FLEXCUBE KYC_REF_NO. Current correlation value, sent to REIS as systemId. */
+  /** Internal FLEXCUBE KYC reference. Historical requests used it as systemId; CIF cutover is held. */
   kycRefNo: string;
-  /** FLEXCUBE CUSTOMER_NO. Null until the customer is created in FLEXCUBE. */
+  /** Candidate FLEXCUBE CIF. Oracle source and pre-onboarding availability await Finexta confirmation. */
   customerNo: string | null;
   accountManagerLogin: string;
   accountManagerEmail: string;

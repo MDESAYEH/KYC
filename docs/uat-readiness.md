@@ -1,3 +1,5 @@
+> **CIF requirement update — 17 November 2026:** Statements below equating primary REIS `systemId` with `KYC_REF_NO` describe the historical baseline and are superseded. The required customer identity is CIF; its Oracle source, lifecycle, historical identity reconciliation and revision/callback contract are still unverified. The current application holds all new submissions; historical callbacks remain supported. See [CIF preparation and blockers](reis-cif-identity.md).
+
 # UAT readiness checklist
 
 Status: **NOT READY for real end-to-end UAT.** Everything below marked open blocks it. The integration is not complete while any FLEXCUBE contract or Bank reference mapping is TBD. All current tests use fake REIS/FLEXCUBE stand-ins and synthetic data.

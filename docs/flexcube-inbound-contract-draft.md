@@ -1,3 +1,5 @@
+> **CIF requirement update — 17 November 2026:** Statements below equating primary REIS `systemId` with `KYC_REF_NO` describe the historical baseline and are superseded. The required customer identity is CIF; its Oracle source, lifecycle, historical identity reconciliation and revision/callback contract are still unverified. The current application holds all new submissions; historical callbacks remain supported. See [CIF preparation and blockers](reis-cif-identity.md).
+
 # FLEXCUBE -> Integration API: inbound contract DRAFT
 
 > **DRAFT - NOT YET APPROVED.** The final FLEXCUBE -> Integration API contract (URL, method, authentication, JSON shape, column names) is **TBD**. This document lists what the Integration API needs from FLEXCUBE, based on the current mapping, to support the discussion with the FLEXCUBE team. The application is NOT wired to this exact shape: it uses the provisional DTO adapter (`FlexcubeCustomerRequest`), which will be adjusted after the discussion.

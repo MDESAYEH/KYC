@@ -99,6 +99,7 @@ describe('operational recovery and queries (application services, no HTTP)', () 
         kycRefNo: 'R-1',
         customerNo: null,
         finalStatus: 'CUSTOMER',
+        seqNo: 1,
         reisCustomerId: 77,
         idempotencyKey: `${id}:CUSTOMER`, // same key as the first attempt
       });

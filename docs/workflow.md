@@ -1,3 +1,5 @@
+> **CIF requirement update — 17 November 2026:** Statements below equating primary REIS `systemId` with `KYC_REF_NO` describe the historical baseline and are superseded. The required customer identity is CIF; its Oracle source, lifecycle, historical identity reconciliation and revision/callback contract are still unverified. The current application holds all new submissions; historical callbacks remain supported. See [CIF preparation and blockers](reis-cif-identity.md).
+
 # KYC submission workflow (Step 5)
 
 `KycWorkflow.submit(request)` connects the components built so far. It is not exposed over HTTP yet (no FLEXCUBE controller, no `/customerStatus`).

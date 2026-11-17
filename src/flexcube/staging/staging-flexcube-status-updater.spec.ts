@@ -2,6 +2,7 @@ import { assertValidBinds } from './sql-binds';
 import { ReisFinalStatus } from '../../reis/reis-status';
 import { MockFlexcubeStatusUpdater } from '../mock-flexcube-status-updater';
 import {
+  decisionValues,
   assertSafeTableName,
   IFlexcubeSqlExecutor,
   StagingFinalStatus,
@@ -31,12 +32,15 @@ class FakeStaging implements IFlexcubeSqlExecutor {
     assertValidBinds(sql, binds);
     this.calls.push({ sql, binds });
     const mine = this.rows.filter((r) => r.KYC_REF_NO === binds.kycRefNo);
-    const maxSeq = Math.max(...mine.map((r) => r.SEQ_NO));
+    // exact submission when :seqNo is bound, otherwise the latest SEQ_NO (historical behavior)
+    const target = binds.seqNo !== undefined ? binds.seqNo : Math.max(...mine.map((r) => r.SEQ_NO));
     let rowsAffected = 0;
     for (const r of mine) {
+      const replaceable =
+        binds.pendingStatus !== undefined && r.REIS_FINAL_STATUS === binds.pendingStatus;
       if (
-        r.SEQ_NO === maxSeq &&
-        (r.REIS_FINAL_STATUS === null || r.REIS_FINAL_STATUS === binds.finalStatus)
+        r.SEQ_NO === target &&
+        (r.REIS_FINAL_STATUS === null || r.REIS_FINAL_STATUS === binds.finalStatus || replaceable)
       ) {
         r.REIS_FINAL_STATUS = String(binds.finalStatus);
         rowsAffected++;
@@ -142,6 +146,7 @@ describe('FLEXCUBE updater selection', () => {
     syncStartDate: undefined,
     stagingStatusInProgress: 'W',
     keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
+    finalStatusVocabulary: 'approved-blocked',
     ...over,
   });
   const log = () => ({ warn: jest.fn() });
@@ -169,5 +174,93 @@ describe('FLEXCUBE updater selection', () => {
     expect(createFlexcubeStatusUpdater(executor, c, 'production', log())).toBeInstanceOf(
       StagingFlexcubeStatusUpdater,
     );
+  });
+});
+
+describe('final status vocabulary and exact-revision updates', () => {
+  let db: FakeStaging;
+  const row = (seqNo: number, status: string | null = null) => ({
+    KYC_REF_NO: 'K1',
+    SEQ_NO: seqNo,
+    REIS_FINAL_STATUS: status,
+  });
+  beforeEach(() => void (db = new FakeStaging()));
+
+  it('the default vocabulary is unchanged (APPROVED / BLOCKED) and there is no interim word', () => {
+    expect(decisionValues('approved-blocked')).toEqual({
+      approved: 'APPROVED',
+      blocked: 'BLOCKED',
+      pending: null,
+    });
+    expect(toStagingFinalStatus(ReisFinalStatus.CUSTOMER)).toBe('APPROVED');
+  });
+
+  it('the opt-in vocabulary writes CLEAN / PENDING / BLOCKED', () => {
+    expect(decisionValues('clean-pending-blocked')).toEqual({
+      approved: 'CLEAN',
+      blocked: 'BLOCKED',
+      pending: 'PENDING',
+    });
+    expect(toStagingFinalStatus(ReisFinalStatus.CUSTOMER, 'clean-pending-blocked')).toBe('CLEAN');
+    expect(toStagingFinalStatus(ReisFinalStatus.BLOCKED, 'clean-pending-blocked')).toBe('BLOCKED');
+  });
+
+  it('refuses an unknown vocabulary and an unknown REIS status (no default, no guess)', () => {
+    expect(() => decisionValues('whatever' as never)).toThrow('FLEXCUBE_FINAL_STATUS_VOCABULARY');
+    expect(() => new StagingFlexcubeStatusUpdater(db, 'T', 'x' as never)).toThrow();
+    expect(() =>
+      toStagingFinalStatus('TIMEOUT' as ReisFinalStatus, 'clean-pending-blocked'),
+    ).toThrow();
+    expect(() => toStagingFinalStatus('PENDING' as ReisFinalStatus)).toThrow();
+  });
+
+  it('updates the EXACT submission when seqNo is given, never the latest one', async () => {
+    db.rows = [row(1), row(2)];
+    const updater = new StagingFlexcubeStatusUpdater(db, 'T');
+    await updater.updateStatus({ ...update('K1', ReisFinalStatus.CUSTOMER), seqNo: 1 });
+    expect(db.rows).toEqual([row(1, 'APPROVED'), row(2)]);
+    expect(db.calls[0].binds).toEqual({ finalStatus: 'APPROVED', kycRefNo: 'K1', seqNo: 1 });
+    // a revision that does not exist is an error, not "the latest one"
+    await expect(
+      updater.updateStatus({ ...update('K1', ReisFinalStatus.CUSTOMER), seqNo: 9 }),
+    ).rejects.toThrow(StagingRowNotUpdatedError);
+  });
+
+  it('a late callback of an older revision cannot touch the newer revision', async () => {
+    db.rows = [row(1, 'PENDING'), row(2, 'PENDING')];
+    const updater = new StagingFlexcubeStatusUpdater(db, 'T', 'clean-pending-blocked');
+    await updater.updateStatus({ ...update('K1', ReisFinalStatus.BLOCKED), seqNo: 1 });
+    expect(db.rows).toEqual([row(1, 'BLOCKED'), row(2, 'PENDING')]);
+  });
+
+  it('PENDING is replaced by the final decision (new vocabulary), CLEAN / BLOCKED never by another decision', async () => {
+    const updater = new StagingFlexcubeStatusUpdater(db, 'T', 'clean-pending-blocked');
+    db.rows = [row(2, 'PENDING')];
+    await updater.updateStatus({ ...update('K1', ReisFinalStatus.CUSTOMER), seqNo: 2 });
+    expect(db.rows[0].REIS_FINAL_STATUS).toBe('CLEAN');
+    await updater.updateStatus({ ...update('K1', ReisFinalStatus.CUSTOMER), seqNo: 2 }); // idempotent
+    await expect(
+      updater.updateStatus({ ...update('K1', ReisFinalStatus.BLOCKED), seqNo: 2 }),
+    ).rejects.toThrow(StagingRowNotUpdatedError);
+    expect(db.rows[0].REIS_FINAL_STATUS).toBe('CLEAN');
+  });
+
+  it('the default vocabulary never replaces a stored PENDING (no interim word is part of it)', async () => {
+    db.rows = [row(2, 'PENDING')];
+    const updater = new StagingFlexcubeStatusUpdater(db, 'T');
+    await expect(
+      updater.updateStatus({ ...update('K1', ReisFinalStatus.CUSTOMER), seqNo: 2 }),
+    ).rejects.toThrow(StagingRowNotUpdatedError);
+    expect(db.rows[0].REIS_FINAL_STATUS).toBe('PENDING');
+  });
+
+  it('every statement passes the Oracle bind guard in both vocabularies and both targeting modes', async () => {
+    for (const vocabulary of ['approved-blocked', 'clean-pending-blocked'] as const) {
+      db.rows = [row(1), row(2)];
+      const updater = new StagingFlexcubeStatusUpdater(db, 'T', vocabulary);
+      await updater.updateStatus({ ...update('K1', ReisFinalStatus.CUSTOMER), seqNo: 1 });
+      await updater.updateStatus(update('K1', ReisFinalStatus.BLOCKED)); // latest = 2
+      expect(db.rows[1].REIS_FINAL_STATUS).toBe('BLOCKED');
+    }
   });
 });
