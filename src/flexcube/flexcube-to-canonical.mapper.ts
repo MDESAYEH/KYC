@@ -151,6 +151,10 @@ export class FlexcubeToCanonicalMapper implements IFlexcubeToCanonicalMapper {
         throw new InvalidFieldValueError(at('KYC_ID'), 'duplicate within the same company');
       }
       seen.add(systemId);
+      // The party type lives in the CUSTOM row (UAT1 17/11/2026): without it nothing can be decided.
+      if (p.HAS_CUSTOM_ROW === false) {
+        throw new MissingRequiredFieldError(at('STTM_KYC_CORP_KEYPERSONS_CUSTOM'));
+      }
       const common = {
         parentKycRefNo: companyKycRefNo,
         systemId,
@@ -165,9 +169,6 @@ export class FlexcubeToCanonicalMapper implements IFlexcubeToCanonicalMapper {
         };
         this.assign(out, 'tradeNo', this.optional(p.TIN));
         return out;
-      }
-      if (p.HAS_CUSTOM_ROW === false) {
-        throw new MissingRequiredFieldError(at('STTM_KYC_CORP_KEYPERSONS_CUSTOM'));
       }
       const out: CanonicalIndividualRelation = {
         ...common,

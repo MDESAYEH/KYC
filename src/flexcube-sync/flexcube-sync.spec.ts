@@ -251,8 +251,8 @@ describe('FlexcubeKycSource (provisional STTM queries)', () => {
       db.keyPersons.set('K2', [KEY_I]);
       const r = await custom.load({ kycRefNo: 'K2', seqNo: 1, customerType: 'CORPORATE' });
       const sql = db.allSql.find((c) => c.sql.includes('STTM_KYC_CORP_KEYPERSONS'))!.sql;
-      expect(sql).toContain('k.OWNERSHIP_TYPE AS KYC_KEYPERSON_TYPE');
-      expect(sql).not.toContain('k.KYC_KEYPERSON_TYPE');
+      expect(sql).toContain('cu.OWNERSHIP_TYPE AS KYC_KEYPERSON_TYPE');
+      expect(sql).not.toContain('k.OWNERSHIP_TYPE');
       expect(r.corporate?.RELATED_PARTIES?.[0]).toMatchObject({ KYC_KEYPERSON_TYPE: 'I' });
     });
 
@@ -260,7 +260,7 @@ describe('FlexcubeKycSource (provisional STTM queries)', () => {
       db.keyPersons.set('K2', [KEY_I]);
       await load();
       const sql = db.allSql.find((c) => c.sql.includes('STTM_KYC_CORP_KEYPERSONS'))!.sql;
-      expect(sql).toContain('k.KYC_KEYPERSON_TYPE AS KYC_KEYPERSON_TYPE');
+      expect(sql).toContain('cu.KYC_KEYPERSON_TYPE AS KYC_KEYPERSON_TYPE');
     });
 
     it('rejects an unsafe key-person type column name', () => {

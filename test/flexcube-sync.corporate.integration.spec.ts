@@ -74,7 +74,7 @@ const KEY_PERSON_C: SqlRow = {
   ADDRESS_COUNTRY: 'T-REL-NAT',
   PLACE_OF_BIRTH: null,
   TIN: 'TRD-9',
-  CUSTOM_KYC_REF_NO: null,
+  CUSTOM_KYC_REF_NO: 'KYC-C1',
   FIRST_NAME: null,
   LAST_NAME: null,
   PASSPORT_NUMBER: null,

@@ -76,7 +76,7 @@ export class FlexcubeRelatedPartyDto {
   @IsOptional() @IsString() PLACE_OF_BIRTH?: string;
   /** Company: trade_no. Individual: not used (REIS tin is the document type, PASS by default). */
   @IsOptional() @IsString() TIN?: string;
-  /** false when the LEFT JOIN found no STTM_KYC_CORP_KEYPERSONS_CUSTOM row. */
+  /** false when the LEFT JOIN found no STTM_KYC_CORP_KEYPERSONS_CUSTOM row (the party type lives there). */
   @IsOptional() HAS_CUSTOM_ROW?: boolean;
   /** English name (FLEXCUBE keeps the Arabic full name in NAME). */
   @IsOptional() @IsString() FIRST_NAME?: string;

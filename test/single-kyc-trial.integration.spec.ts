@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { HttpService } from '@nestjs/axios';
 import axios from 'axios';
 import { Logger } from '@nestjs/common';
@@ -417,6 +419,20 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
     expect(saved.some((e) => e.phase === 'wire')).toBe(true);
     await expect(planSingleKycTrial(deps)).rejects.toBeDefined();
     expect(server.requestsTo(path)).toHaveLength(1);
+  });
+  it("the CIF SELECT adapted from Finexta's answer (docs/finexta-cif-source.sql) passes the guard and selects only the CIF", () => {
+    const sql = validateTrialSourceSql(
+      readFileSync(join(__dirname, '..', 'docs', 'finexta-cif-source.sql'), 'utf8'),
+    );
+    expect(sql).toMatch(/^SELECT C\.CUSTOMER_NO AS CIF_VALUE\s+FROM STTM_CUSTOMER C/);
+    expect(sql).not.toContain('C.*');
+    for (const cond of [
+      "KYC_DETAILS = 'V'",
+      "RECORD_STAT = 'O'",
+      "AUTH_STAT = 'A'",
+      'K.MOD_NO = :seqNo',
+    ])
+      expect(sql).toContain(cond);
   });
   it('validates source SQL binds and rejects a write, missing version bind or claim-style reserved names', () => {
     expect(

@@ -116,7 +116,7 @@ Context: single UAT1 test, KYC_REF_NO `001ZKYC26151003Y`, MOD_NO 2. We cannot se
 - **F3 (enforcement).** For each of `CLEAN`, `PENDING`, `BLOCKED` and `NULL`: what does FLEXCUBE do to account opening/activation and to operations on an
   already active account? Is a `NULL` treated as blocked? Which row is read when a CIF has several revisions (latest `SEQ_NO`, or the one matching the authorized `MOD_NO`)?
 - **F4 (claim).** Which values may `PROCESS_STATUS` hold? Is `W` accepted? (The first attempt failed with ORA-01745, caused by our bind names, but we need the constraint to confirm.)
-- **F5 (corporate).** Which column of `STTM_KYC_CORP_KEYPERSONS` holds individual/company (I/C)? `KYC_KEYPERSON_TYPE` does not exist; do the values of `OWNERSHIP_TYPE` map to I/C, and how?
+- **F5 (corporate).** `KYC_KEYPERSON_TYPE` exists in `STTM_KYC_CORP_KEYPERSONS_CUSTOM` (not in `STTM_KYC_CORP_KEYPERSONS`): confirm its values and that I/C mean individual/company (discovery part D, `--part keyperson`). `OWNERSHIP_TYPE` is evidence only, never a substitute. Original wording: do the values of `OWNERSHIP_TYPE` map to I/C, and how?
 - **F6 (data).** Confirm Occupation, Account Purpose and Total Income are now mandatory on save in the FLEXCUBE screen (Tareq had to correct one directly in the database).
 
 ### To Vneuron (REIS)

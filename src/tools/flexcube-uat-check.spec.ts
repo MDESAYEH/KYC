@@ -227,7 +227,7 @@ describe('UAT1 read-only check', () => {
       present: true,
       similarColumns: ['KYC_KEYPERSON_TYPE'],
     });
-    db.missing = { STTM_KYC_CORP_KEYPERSONS: ['KYC_KEYPERSON_TYPE'] };
+    db.missing = { STTM_KYC_CORP_KEYPERSONS_CUSTOM: ['KYC_KEYPERSON_TYPE'] };
     db.corporateColumn = false;
     const missing = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
     expect(missing.keypersonType).toMatchObject({ present: false, similarColumns: [] });
@@ -264,19 +264,19 @@ describe('UAT1 read-only check', () => {
   });
 
   it('expects the configured key-person type column instead of KYC_KEYPERSON_TYPE', async () => {
-    expect(expectedColumns().STTM_KYC_CORP_KEYPERSONS).toContain('KYC_KEYPERSON_TYPE');
-    const cols = expectedColumns('OWNERSHIP_TYPE').STTM_KYC_CORP_KEYPERSONS;
+    expect(expectedColumns().STTM_KYC_CORP_KEYPERSONS_CUSTOM).toContain('KYC_KEYPERSON_TYPE');
+    const cols = expectedColumns('OWNERSHIP_TYPE').STTM_KYC_CORP_KEYPERSONS_CUSTOM;
     expect(cols).toContain('OWNERSHIP_TYPE');
     expect(cols).not.toContain('KYC_KEYPERSON_TYPE');
     // the fake lists the default columns: with the default there is nothing missing, with
     // OWNERSHIP_TYPE the column is reported as missing
     const ok = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
-    expect(ok.tables.find((t) => t.table === 'STTM_KYC_CORP_KEYPERSONS')?.missingColumns).toEqual(
-      [],
-    );
+    expect(
+      ok.tables.find((t) => t.table === 'STTM_KYC_CORP_KEYPERSONS_CUSTOM')?.missingColumns,
+    ).toEqual([]);
     const other = await runUatCheck(db, STAGING, pipeline, 5, SINCE, 'OWNERSHIP_TYPE');
     expect(
-      other.tables.find((t) => t.table === 'STTM_KYC_CORP_KEYPERSONS')?.missingColumns,
+      other.tables.find((t) => t.table === 'STTM_KYC_CORP_KEYPERSONS_CUSTOM')?.missingColumns,
     ).toEqual(['OWNERSHIP_TYPE']);
     await expect(runUatCheck(db, STAGING, pipeline, 5, SINCE, 'A;B')).rejects.toThrow(
       'FLEXCUBE_KEYPERSON_TYPE_COLUMN',
@@ -285,10 +285,17 @@ describe('UAT1 read-only check', () => {
 
   it('expects the key-person tables and their columns', () => {
     expect(EXPECTED_COLUMNS.STTM_KYC_CORP_KEYPERSONS).toEqual(
-      expect.arrayContaining(['KYC_ID', 'NAME', 'KYC_KEYPERSON_TYPE', 'RELATIONSHIP', 'TIN']),
+      expect.arrayContaining(['KYC_ID', 'NAME', 'RELATIONSHIP', 'TIN']),
     );
+    expect(EXPECTED_COLUMNS.STTM_KYC_CORP_KEYPERSONS).not.toContain('KYC_KEYPERSON_TYPE');
     expect(EXPECTED_COLUMNS.STTM_KYC_CORP_KEYPERSONS_CUSTOM).toEqual(
-      expect.arrayContaining(['FIRST_NAME', 'LAST_NAME', 'PASSPORT_NUMBER', 'NATIONAL_ID']),
+      expect.arrayContaining([
+        'KYC_KEYPERSON_TYPE',
+        'FIRST_NAME',
+        'LAST_NAME',
+        'PASSPORT_NUMBER',
+        'NATIONAL_ID',
+      ]),
     );
   });
 

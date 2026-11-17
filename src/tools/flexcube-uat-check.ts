@@ -75,7 +75,6 @@ export const EXPECTED_COLUMNS: Record<string, string[]> = {
     'KYC_REF_NO',
     'KYC_ID',
     'NAME',
-    'KYC_KEYPERSON_TYPE',
     'RELATIONSHIP',
     'DATE_OF_BIRTH',
     'NATIONALITY',
@@ -87,6 +86,8 @@ export const EXPECTED_COLUMNS: Record<string, string[]> = {
     'KYC_REF_NO',
     'KYC_ID',
     'NAME',
+    // the party type (I / C) lives here, not in STTM_KYC_CORP_KEYPERSONS (UAT1, 17/11/2026)
+    'KYC_KEYPERSON_TYPE',
     'FIRST_NAME',
     'LAST_NAME',
     'PASSPORT_NUMBER',
@@ -103,7 +104,7 @@ export function expectedColumns(
 ): Record<string, string[]> {
   return {
     ...EXPECTED_COLUMNS,
-    STTM_KYC_CORP_KEYPERSONS: EXPECTED_COLUMNS.STTM_KYC_CORP_KEYPERSONS.map((c) =>
+    STTM_KYC_CORP_KEYPERSONS_CUSTOM: EXPECTED_COLUMNS.STTM_KYC_CORP_KEYPERSONS_CUSTOM.map((c) =>
       c === DEFAULT_KEYPERSON_TYPE_COLUMN ? keypersonTypeColumn : c,
     ),
   };
@@ -162,7 +163,7 @@ export interface UatCheckReport {
   keypersonType?: {
     configuredColumn: string;
     present: boolean;
-    /** Columns of STTM_KYC_CORP_KEYPERSONS whose name contains TYPE (candidates to ask Finexta about). */
+    /** Columns of STTM_KYC_CORP_KEYPERSONS_CUSTOM whose name contains TYPE (candidates to ask Finexta about). */
     similarColumns: string[];
   };
   pending?: {
@@ -337,7 +338,7 @@ export async function runUatCheck(
   if (report.cutoff !== undefined) {
     report.recovery = await recoveryDiagnostics(db, staging, report.cutoff).catch(() => undefined);
   }
-  const kp = report.tables.find((t) => t.table === 'STTM_KYC_CORP_KEYPERSONS');
+  const kp = report.tables.find((t) => t.table === 'STTM_KYC_CORP_KEYPERSONS_CUSTOM');
   report.keypersonType = {
     configuredColumn: keypersonTypeColumn,
     present: kp !== undefined && !kp.missingColumns.includes(keypersonTypeColumn),

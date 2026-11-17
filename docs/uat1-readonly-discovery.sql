@@ -120,3 +120,62 @@ SELECT NVL(REIS_FINAL_STATUS, '(null)') AS REIS_FINAL_STATUS, COUNT(*) AS N
               FROM REIS_KYC.STTM_KYC_REIS_PAYLOAD_CUSTOM
              GROUP BY REIS_FINAL_STATUS
              ORDER BY 1;
+
+-- ===== PART D: key-person type column (evidence only, OWNERSHIP_TYPE is NOT a substitute) =====
+-- Binds: :ownerName = OBPPRD (exact), :maxRows <= 500. In the SQL below the owner is written as OBPPRD.
+
+-- D:keypersonColumns
+-- Columns of both key-person tables: where do KYC_KEYPERSON_TYPE and OWNERSHIP_TYPE live?
+SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE, DATA_LENGTH, NULLABLE
+              FROM ALL_TAB_COLUMNS
+             WHERE OWNER = :ownerName
+               AND TABLE_NAME IN ('STTM_KYC_CORP_KEYPERSONS', 'STTM_KYC_CORP_KEYPERSONS_CUSTOM')
+               AND (COLUMN_NAME LIKE '%TYPE%' OR COLUMN_NAME LIKE '%OWNER%' OR COLUMN_NAME IN ('KYC_REF_NO', 'KYC_ID', 'NAME', 'RELATIONSHIP'))
+             ORDER BY TABLE_NAME, COLUMN_NAME;
+
+-- D:keypersonTypeValues
+-- Distinct values of KYC_KEYPERSON_TYPE in the CUSTOM table with counts (no identifiers).
+SELECT KYC_KEYPERSON_TYPE, COUNT(*) AS N FROM OBPPRD.STTM_KYC_CORP_KEYPERSONS_CUSTOM
+             GROUP BY KYC_KEYPERSON_TYPE ORDER BY N DESC FETCH FIRST :maxRows ROWS ONLY;
+
+-- D:keypersonJoinIntegrity
+-- Does every key person have exactly one CUSTOM row on KYC_REF_NO + KYC_ID + NAME? Counts only.
+SELECT (SELECT COUNT(*) FROM OBPPRD.STTM_KYC_CORP_KEYPERSONS) AS KEYPERSONS,
+                    (SELECT COUNT(*) FROM OBPPRD.STTM_KYC_CORP_KEYPERSONS_CUSTOM) AS CUSTOM_ROWS,
+                    (SELECT COUNT(*) FROM OBPPRD.STTM_KYC_CORP_KEYPERSONS k WHERE NOT EXISTS (SELECT 1 FROM OBPPRD.STTM_KYC_CORP_KEYPERSONS_CUSTOM c
+                       WHERE c.KYC_REF_NO = k.KYC_REF_NO AND c.KYC_ID = k.KYC_ID AND c.NAME = k.NAME)) AS WITHOUT_CUSTOM,
+                    (SELECT COUNT(*) FROM OBPPRD.STTM_KYC_CORP_KEYPERSONS_CUSTOM c WHERE NOT EXISTS (SELECT 1 FROM OBPPRD.STTM_KYC_CORP_KEYPERSONS k
+                       WHERE c.KYC_REF_NO = k.KYC_REF_NO AND c.KYC_ID = k.KYC_ID AND c.NAME = k.NAME)) AS CUSTOM_WITHOUT_KEYPERSON,
+                    (SELECT COUNT(*) FROM (SELECT KYC_REF_NO, KYC_ID, NAME FROM OBPPRD.STTM_KYC_CORP_KEYPERSONS_CUSTOM
+                       GROUP BY KYC_REF_NO, KYC_ID, NAME HAVING COUNT(*) > 1)) AS DUPLICATE_CUSTOM_KEYS
+               FROM DUAL;
+
+-- D:keypersonTypeVersusOwnershipType
+-- EVIDENCE ONLY: cross-tab of KYC_KEYPERSON_TYPE (CUSTOM) with OWNERSHIP_TYPE (key persons) and RELATIONSHIP. OWNERSHIP_TYPE is not a substitute for the party type.
+SELECT c.KYC_KEYPERSON_TYPE, k.OWNERSHIP_TYPE, k.RELATIONSHIP, COUNT(*) AS N
+              FROM OBPPRD.STTM_KYC_CORP_KEYPERSONS k JOIN OBPPRD.STTM_KYC_CORP_KEYPERSONS_CUSTOM c
+                ON c.KYC_REF_NO = k.KYC_REF_NO AND c.KYC_ID = k.KYC_ID AND c.NAME = k.NAME
+             GROUP BY c.KYC_KEYPERSON_TYPE, k.OWNERSHIP_TYPE, k.RELATIONSHIP
+             ORDER BY N DESC FETCH FIRST :maxRows ROWS ONLY;
+
+-- ===== PART E: privileges versus naming (why is CUSTOMER / CIF not visible?) =====
+
+-- E:visibleCustomerObjects
+-- Objects named STTM_CUST% / %CUSTOMER% that the account can SEE (tables, views, synonyms). Not visible does not mean not existing.
+SELECT OWNER, OBJECT_NAME, OBJECT_TYPE FROM ALL_OBJECTS
+             WHERE OBJECT_TYPE IN ('TABLE', 'VIEW', 'SYNONYM')
+               AND (OBJECT_NAME LIKE 'STTM\_CUST%' ESCAPE '\' OR OBJECT_NAME LIKE '%CUSTOMER%')
+             ORDER BY OWNER, OBJECT_NAME FETCH FIRST :maxRows ROWS ONLY;
+
+-- E:grantsOnKycAndCustomerObjects
+-- Grants the account holds on STTM_KYC% and STTM_CUST% objects (grantee, privilege, table only): shows which objects were granted and which were not.
+SELECT TABLE_SCHEMA, TABLE_NAME, PRIVILEGE, GRANTEE, GRANTOR
+              FROM ALL_TAB_PRIVS
+             WHERE TABLE_NAME LIKE 'STTM\_KYC%' ESCAPE '\' OR TABLE_NAME LIKE 'STTM\_CUST%' ESCAPE '\'
+             ORDER BY TABLE_NAME, PRIVILEGE FETCH FIRST :maxRows ROWS ONLY;
+
+-- E:dbaCustomerObjects
+-- DBA-ONLY (expected ORA-00942 for this account; run by Finexta): do STTM_CUST% objects exist and in which schema?
+SELECT OWNER, OBJECT_NAME, OBJECT_TYPE FROM DBA_OBJECTS
+             WHERE OBJECT_TYPE IN ('TABLE', 'VIEW', 'SYNONYM') AND OBJECT_NAME LIKE 'STTM\_CUST%' ESCAPE '\'
+             ORDER BY OWNER, OBJECT_NAME FETCH FIRST :maxRows ROWS ONLY;

@@ -60,7 +60,11 @@ function save(path: string, value: unknown): void {
 }
 
 export function validateTrialSourceSql(sql: string): string {
-  const clean = sql.trim().replace(/;$/, '');
+  // whole-line '--' comments are documentation only and are not part of the hashed statement
+  const clean = sql
+    .replace(/^[ \t]*--.*$/gm, '')
+    .trim()
+    .replace(/;$/, '');
   if (
     !/^SELECT\b/i.test(clean) ||
     /;|\b(INSERT|UPDATE|DELETE|MERGE|CREATE|DROP|ALTER|INTO|EXECUTE)\b/i.test(clean)

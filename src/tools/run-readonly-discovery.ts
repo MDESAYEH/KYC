@@ -7,7 +7,7 @@ import { OracleSqlExecutor } from '../flexcube/staging/oracle-sql-executor';
 import { DiscoveryOptions, runReadOnlyDiscovery } from './readonly-discovery';
 
 /**
- * CLI: `npm run discover:uat1 -- --report <NEW file> [--part cif|status|all] [--owner OWNER] [--table T]
+ * CLI: `npm run discover:uat1 -- --report <NEW file> [--part cif|status|keyperson|access|all] [--owner OWNER] [--table T]
  *       [--max 200] [--fragments CIF,CUSTOMER,KYC] [--candidate OWNER.TABLE]`
  *
  * READ-ONLY. Uses the application's own Oracle executor and the FLEXCUBE_DB_* values the tools already
@@ -25,8 +25,8 @@ async function main(): Promise<void> {
   const report = arg('--report');
   if (!report) throw new Error('--report <new protected file> is required');
   const part = (arg('--part') ?? 'all') as DiscoveryOptions['part'];
-  if (!['cif', 'status', 'all'].includes(part))
-    throw new Error('--part must be cif, status or all');
+  if (!['cif', 'status', 'keyperson', 'access', 'all'].includes(part))
+    throw new Error('--part must be cif, status, keyperson, access or all');
   const [candidateOwner, candidateTable] = (arg('--candidate') ?? '').split('.');
   loadEnvFile();
   const config = loadConfiguration();

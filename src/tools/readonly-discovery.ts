@@ -3,6 +3,7 @@ import { oraCode } from '../flexcube/oracle-error';
 import { assertValidBinds } from '../flexcube/staging/sql-binds';
 import { cifSourceDiscoveryQueries } from './cif-source-discovery';
 import { statusContractDiscoveryQueries } from './status-contract-discovery';
+import { accessDiscoveryQueries, keypersonDiscoveryQueries } from './keyperson-access-discovery';
 
 /**
  * Runs the prepared READ-ONLY discovery queries (docs/uat1-readonly-discovery.sql) with the executor and
@@ -15,7 +16,8 @@ import { statusContractDiscoveryQueries } from './status-contract-discovery';
  * dictionary metadata, never customer data, and is written by the CLI to a new protected file.
  */
 export interface DiscoveryOptions {
-  part: 'cif' | 'status' | 'all';
+  /** 'all' = cif + status (unchanged); 'keyperson' and 'access' are separate, explicit parts. */
+  part: 'cif' | 'status' | 'keyperson' | 'access' | 'all';
   /** Exact upper-case owner of the staging table; resolved from the current session when absent. */
   owner?: string;
   table?: string;
@@ -144,6 +146,33 @@ export async function runReadOnlyDiscovery(
       for (const q of statusContractDiscoveryQueries({ owner: resolvedOwner, table, maxRows })) {
         queries.push(await run(db, `status:${q.name}`, q.sql, q.binds));
       }
+    }
+  }
+  if (options.part === 'keyperson') {
+    resolvedOwner =
+      options.owner ??
+      (await resolveStagingOwner(
+        db,
+        (options.table ?? 'STTM_KYC_REIS_PAYLOAD_CUSTOM').toUpperCase(),
+      ));
+    if (resolvedOwner === null) {
+      queries.push({
+        name: 'keyperson:resolveOwner',
+        binds: {},
+        rowCount: 0,
+        rows: [],
+        error: 'OWNER_NOT_RESOLVED_PASS_--owner',
+      });
+    } else {
+      for (const q of keypersonDiscoveryQueries({ owner: resolvedOwner, maxRows })) {
+        queries.push(await run(db, `keyperson:${q.name}`, q.sql, q.binds));
+      }
+    }
+  }
+
+  if (options.part === 'access') {
+    for (const q of accessDiscoveryQueries({ maxRows })) {
+      queries.push(await run(db, `access:${q.name}`, q.sql, q.binds));
     }
   }
   return { generatedAt: now().toISOString(), part: options.part, resolvedOwner, queries };

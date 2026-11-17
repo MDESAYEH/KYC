@@ -41,10 +41,15 @@ import { OWN_MSGID_PATTERN } from '../staging/flexcube-staging';
 /** KYC types a pass may take: individuals always, corporates only with a proven type column. */
 const typesSql = (corporate: boolean): string => (corporate ? "('R', 'C')" : "('R')");
 
-/** Is the configured key-person type column present in STTM_KYC_CORP_KEYPERSONS? (metadata only) */
+/**
+ * Is the configured key-person type column present in STTM_KYC_CORP_KEYPERSONS_CUSTOM? (metadata only)
+ * UAT1 read-only check (17/11/2026): KYC_KEYPERSON_TYPE exists in OBPPRD.STTM_KYC_CORP_KEYPERSONS_CUSTOM and
+ * NOT in OBPPRD.STTM_KYC_CORP_KEYPERSONS: the type is read from the CUSTOM table. Its VALUES and their
+ * meaning (I / C) still have to be confirmed (docs/uat1-readonly-discovery.sql, part D).
+ */
 export const CORPORATE_TYPE_COLUMN_EXISTS_SQL = `
   SELECT COUNT(*) AS N FROM ALL_TAB_COLUMNS
-   WHERE TABLE_NAME = 'STTM_KYC_CORP_KEYPERSONS' AND COLUMN_NAME = :columnName`;
+   WHERE TABLE_NAME = 'STTM_KYC_CORP_KEYPERSONS_CUSTOM' AND COLUMN_NAME = :columnName`;
 
 /**
  * Open KYCs created on / after the cut-off (:since, 'YYYY-MM-DDTHH24:MI:SS') whose current
@@ -113,7 +118,7 @@ export const CORPORATE_PRODUCTS_SQL = `
  * CUSTOM_KYC_REF_NO = NULL and is reported as a validation error, never silently dropped.
  */
 export const corporateKeypersonsSql = (typeColumn: string): string => `
-  SELECT k.KYC_ID, k.NAME, k.${typeColumn} AS KYC_KEYPERSON_TYPE, k.RELATIONSHIP, k.DATE_OF_BIRTH,
+  SELECT k.KYC_ID, k.NAME, cu.${typeColumn} AS KYC_KEYPERSON_TYPE, k.RELATIONSHIP, k.DATE_OF_BIRTH,
          k.NATIONALITY, k.ADDRESS_COUNTRY, k.PLACE_OF_BIRTH, k.TIN,
          cu.KYC_REF_NO AS CUSTOM_KYC_REF_NO, cu.FIRST_NAME, cu.LAST_NAME, cu.PASSPORT_NUMBER,
          cu.PASSPORT_ISSUE_DATE, cu.PASSPORT_EXPIRY_DATE, cu.PLACE_OF_ISSUE, cu.NATIONAL_ID

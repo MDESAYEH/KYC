@@ -41,7 +41,7 @@ const companyParty = (over: Partial<FlexcubeRelatedPartyDto> = {}): FlexcubeRela
   RELATIONSHIP: 'OWNER',
   ADDRESS_COUNTRY: 'T-REL-NAT',
   TIN: 'TRD-9',
-  HAS_CUSTOM_ROW: false,
+  HAS_CUSTOM_ROW: true,
   ...over,
 });
 

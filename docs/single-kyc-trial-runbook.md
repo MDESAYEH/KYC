@@ -65,7 +65,7 @@ If the response is lost: `E`/uncertain, **no resend**; a person reconciles with 
 KYC_REF_NO `001ZKYC26151003Y` and exists before the KYC is sent to REIS; (3) the CHECK constraints and triggers on
 `STTM_KYC_REIS_PAYLOAD_CUSTOM`, and that `REIS_FINAL_STATUS` may hold CLEAN, PENDING and BLOCKED and that FLEXCUBE reads them
 (blocking account activation on PENDING and BLOCKED); (4) which column holds the key-person type I/C in
-`STTM_KYC_CORP_KEYPERSONS` (the expected `KYC_KEYPERSON_TYPE` does not exist; `OWNERSHIP_TYPE` does).
+`STTM_KYC_CORP_KEYPERSONS_CUSTOM` (`KYC_KEYPERSON_TYPE` exists there, not in `STTM_KYC_CORP_KEYPERSONS`; its values and meaning are to be confirmed with counts-only discovery part D).
 
 **Vneuron (REIS)** — Please confirm: (1) no onboarding/customer exists for systemId `001ZKYC26151003Y` or `00005804` in UAT
 (without calling the state-changing onboarding endpoint); (2) that systemId = CIF is accepted, how an update of the same CIF

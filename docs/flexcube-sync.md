@@ -70,8 +70,11 @@ claimed row, so it can follow Finexta's CHECK constraint on the staging table wi
 The claim stays conditional (only from `N`), so two instances never send the same KYC.
 
 `FLEXCUBE_KEYPERSON_TYPE_COLUMN` (default `KYC_KEYPERSON_TYPE`, a plain Oracle identifier) names the column of
-`STTM_KYC_CORP_KEYPERSONS` that holds the party type `I` / `C`. UAT1 has no `KYC_KEYPERSON_TYPE` column
-(`OWNERSHIP_TYPE` exists) and Finexta has not said which column to use; when they answer only `.env` changes.
+`STTM_KYC_CORP_KEYPERSONS_CUSTOM` (not `STTM_KYC_CORP_KEYPERSONS`) that holds the party type `I` / `C`. UAT1 read-only
+check (17/11/2026): `KYC_KEYPERSON_TYPE` exists in `OBPPRD.STTM_KYC_CORP_KEYPERSONS_CUSTOM` and not in
+`OBPPRD.STTM_KYC_CORP_KEYPERSONS`, so the SELECT reads `cu.<column>`. Its values and meaning are still to be
+confirmed (discovery part D); a key person without a CUSTOM row is a validation error. If Finexta names another
+column only `.env` changes.
 The SELECT aliases it back to `KYC_KEYPERSON_TYPE`, and `npm run check:uat1` checks the configured column.
 Corporate KYCs are only selected while that column is proven to exist (a metadata check, repeated every
 10 minutes, `flexcube.sync.corporateDisabled` when it is missing): without it no corporate KYC is claimed, no row is
