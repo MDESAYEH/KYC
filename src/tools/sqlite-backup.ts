@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, statSync } from 'node:fs';
 import Database from 'better-sqlite3';
 
 /**
@@ -27,14 +27,12 @@ export async function backupSqlite(
     throw new Error('The backup destination already exists (never overwritten)');
   const src = new Database(source, { readonly: true, fileMustExist: true });
   try {
+    // Reserve the path exclusively and restrict access BEFORE SQLite writes customer data.
+    // The destination directory must also be restricted (Windows uses its inherited ACL).
+    closeSync(openSync(destination, 'wx', 0o600));
     await src.backup(destination);
   } finally {
     src.close();
-  }
-  try {
-    chmodSync(destination, 0o600); // best effort (no effect on Windows)
-  } catch {
-    /* ignore */
   }
   const copy = new Database(destination, { readonly: true, fileMustExist: true });
   try {

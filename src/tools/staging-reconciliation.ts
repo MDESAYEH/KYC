@@ -298,6 +298,8 @@ export async function reconcileNeverSent(
           { kycRefNo: row.kycRefNo, seqNo: row.seqNo },
           code as string,
           opts.since,
+          row.msgId ?? '',
+          row.resDate,
         )
       : false;
     if (restored) report.restored++;

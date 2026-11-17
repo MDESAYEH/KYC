@@ -220,21 +220,32 @@ export class StagingSubmissionRepository {
   /**
    * E -> N for ONE row. The WHERE clause repeats the WHOLE eligibility predicate (ownership of the
    * MSGID, status, counters, empty request, KYC open at the same MOD_NO of a supported type since the
-   * cut-off, exact RESPONSE marker), so a row that changed after it was selected is not touched.
+   * cut-off, exact RESPONSE marker) and the exact MSGID the backup recorded, so a row that changed
+   * (or was replaced) after it was selected is not touched.
    * RESPONSE, RETRY_COUNT and RES_DATE are reset. Called ONLY by the reconciliation tool, after the
    * evidence checks and a verified backup.
    */
-  async restoreNeverSent(key: StagingKey, errorCode: string, since: string): Promise<boolean> {
+  async restoreNeverSent(
+    key: StagingKey,
+    errorCode: string,
+    since: string,
+    msgId: string,
+    originalResDate: string | null,
+  ): Promise<boolean> {
     const { rowsAffected } = await this.db.execute(
       `UPDATE ${this.table} s SET PROCESS_STATUS = :targetStatus, RESPONSE = NULL, ` +
         `RETRY_COUNT = 0, RES_DATE = NULL ` +
-        `WHERE s.KYC_REF_NO = :kycRefNo AND s.SEQ_NO = :seqNo ` +
+        `WHERE s.KYC_REF_NO = :kycRefNo AND s.SEQ_NO = :seqNo AND s.MSGID = :msgId ` +
+        `AND (s.RES_DATE = TO_DATE(:originalResDate, 'YYYY-MM-DD"T"HH24:MI:SS') ` +
+        `OR (s.RES_DATE IS NULL AND :originalResDate IS NULL)) ` +
         `AND ${this.neverSentPredicate(':expectedResponse0')}`,
       {
         targetStatus: StagingProcessStatus.NEW,
         errorStatus: StagingProcessStatus.ERROR,
         kycRefNo: key.kycRefNo,
         seqNo: key.seqNo,
+        msgId,
+        originalResDate,
         expectedResponse0: technicalErrorResponse(errorCode),
         since,
       },

@@ -42,7 +42,10 @@ describe('local evidence from the integration layer database (read-only SELECTs)
 
   it('a missing table is an error, never "no evidence of sending"', async () => {
     await ds.query('DROP TABLE kyc_case');
-    await expect(evidence.hasCase('K1')).rejects.toThrow();
-    await expect(evidence.summary()).rejects.toThrow();
+    // The native SQLite addon can return an Error from a different Jest VM realm when the
+    // full suite shares the addon. Assert the actual rejection, not instanceof Error.
+    const missingTable = { message: expect.stringContaining('no such table: kyc_case') };
+    await expect(evidence.hasCase('K1')).rejects.toMatchObject(missingTable);
+    await expect(evidence.summary()).rejects.toMatchObject(missingTable);
   });
 });

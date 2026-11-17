@@ -92,7 +92,12 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
     }
     if (sql.includes('RESPONSE = NULL')) {
       // reconciliation E -> N: the UPDATE repeats the WHOLE eligibility predicate
-      const restored = find().filter((r) => this.neverSentEligible(r, b));
+      const restored = find().filter(
+        (r) =>
+          r.MSGID === b.msgId &&
+          (r.RES_DATE ?? null) === b.originalResDate &&
+          this.neverSentEligible(r, b),
+      );
       for (const r of restored) {
         r.PROCESS_STATUS = String(b.targetStatus);
         r.RESPONSE = null;

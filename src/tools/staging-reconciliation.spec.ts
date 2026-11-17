@@ -327,6 +327,14 @@ describe('reconciliation of rows closed as E although the claim never succeeded'
   describe('a row that loses ANY eligibility condition between the SELECT and the UPDATE is not changed', () => {
     const changes: [string, (db: FakeFlexcubeDb) => void][] = [
       ['MSGID is not ours (e.g. TEST123)', (d) => void (d.staging[0].MSGID = 'TEST123')],
+      [
+        'RES_DATE changed after backup',
+        (d) => void (d.staging[0].RES_DATE = '2026-11-17T12:00:00'),
+      ],
+      [
+        'the row was replaced by another of ours (different MSGID)',
+        (d) => void (d.staging[0].MSGID = '0a1b2c3d-1111-4222-8333-444455556666'),
+      ],
       ['the KYC has a new MOD_NO', (d) => void (d.master[0].MOD_NO = 2)],
       ['the KYC is no longer open (RECORD_STAT)', (d) => void (d.master[0].RECORD_STAT = 'C')],
       [
@@ -353,10 +361,12 @@ describe('reconciliation of rows closed as E although the claim never succeeded'
 
     it.each(changes)('%s', async (_name, change) => {
       const original = repo.restoreNeverSent.bind(repo);
-      jest.spyOn(repo, 'restoreNeverSent').mockImplementationOnce(async (key, code, since) => {
-        change(db); // happens after the SELECT and the backup, right before this row's UPDATE
-        return original(key, code, since);
-      });
+      jest
+        .spyOn(repo, 'restoreNeverSent')
+        .mockImplementationOnce(async (key, code, since, msgId, originalResDate) => {
+          change(db); // happens after the SELECT and the backup, right before this row's UPDATE
+          return original(key, code, since, msgId, originalResDate);
+        });
       const first = JSON.stringify(db.staging[0]);
       const report = await reconcileNeverSent(deps(), apply());
       expect(report).toMatchObject({ eligible: 3, restored: 2, notRestored: 1 });

@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
@@ -44,6 +44,8 @@ describe('SQLite online backup (consistent while the service is running)', () =>
     expect(result).toMatchObject({ integrity: 'ok', tables: 1 });
     expect(result.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(result.bytes).toBeGreaterThan(0);
+    if (process.platform !== 'win32')
+      expect(statSync(file('backup.sqlite')).mode & 0o777).toBe(0o600);
     // the live database keeps working and can be backed up again
     live.prepare('INSERT INTO kyc_case (ref) VALUES (?)').run('more');
     await backupSqlite(file('live.sqlite'), file('backup2.sqlite'));

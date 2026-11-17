@@ -84,6 +84,10 @@ by the incident (needs the attestation, backup and rollback plan in `docs/flexcu
 
 ## 5. Rollback (back to the previous commit)
 
+The database restore below is conditional: do it only after confirming database damage. Restoring an old snapshot can
+lose newer local case/callback evidence while Oracle and REIS keep their state. Keep polling off and reconcile those
+systems before any later enablement. Replace the sample SQLite path with the configured DB_SQLITE_PATH.
+
 ```bash
 cd /opt/KYC
 sudo systemctl stop kyc.service
@@ -91,8 +95,14 @@ git checkout --detach $(cat /root/kyc-backup-<STAMP>/commit.txt)
 npm ci && npm run build
 cp -p /root/kyc-backup-<STAMP>/env.bak .env && chmod 600 .env      # only if .env was edited
 # only if the local database was damaged (service stopped): move the damaged file and its -wal / -shm aside, never delete them
-mv var/kyc-local.sqlite var/kyc-local.sqlite.damaged-$(date +%s) 2>/dev/null; rm -f var/kyc-local.sqlite-wal var/kyc-local.sqlite-shm
+DAMAGED=/root/kyc-backup-<STAMP>/damaged-$(date +%s)
+mkdir -m 700 "$DAMAGED"
+for FILE in var/kyc-local.sqlite var/kyc-local.sqlite-wal var/kyc-local.sqlite-shm; do
+  if [ -e "$FILE" ]; then mv -- "$FILE" "$DAMAGED/"; fi
+done
 cp -p /root/kyc-backup-<STAMP>/kyc-local.sqlite var/kyc-local.sqlite
+chmod 600 var/kyc-local.sqlite
+# Confirm FLEXCUBE_POLL_ENABLED=false in the restored .env BEFORE starting the old code.
 sqlite3 var/kyc-local.sqlite "PRAGMA integrity_check;" 2>/dev/null || node -e "console.log(new (require('better-sqlite3'))('var/kyc-local.sqlite').pragma('integrity_check', {simple:true}))"
 sudo systemctl start kyc.service
 ```
