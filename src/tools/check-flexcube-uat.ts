@@ -122,6 +122,26 @@ function print(r: UatCheckReport): void {
         (r.pending.error ? ` - ${r.pending.error}` : ''),
     );
   }
+  if (r.recovery) {
+    const x = r.recovery;
+    console.log('\nOur staging rows against the current KYC versions (counts only):');
+    for (const k of x.rows)
+      console.log(`  ${k.rowKind.padEnd(13)} ${k.kycState.padEnd(20)} ${k.count}`);
+    console.log(
+      `  recoverable by the service (N, current MOD_NO): ${x.autoRecoverable}; E never sent: ${x.neverSentInE}; need a manual look: ${x.needsReview}`,
+    );
+    for (const m of x.neverSentMarkers)
+      console.log(`  never-sent E marker ${m.marker}: ${m.count}`);
+  }
+  if (r.keypersonType) {
+    const k = r.keypersonType;
+    console.log(
+      `\nKey-person type column ${k.configuredColumn}: ${k.present ? 'present' : 'NOT FOUND (corporate KYCs are not processed)'}` +
+        (k.similarColumns.length
+          ? ` - columns with TYPE in the name: ${k.similarColumns.join(', ')}`
+          : ''),
+    );
+  }
   if (r.branches?.length) {
     console.log(
       `\nCut-off in use: ${r.cutoff ?? '(missing or invalid)'}. Latest MAKER_DT_STAMP per branch:`,

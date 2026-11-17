@@ -1,5 +1,6 @@
 import { CanonicalToReisTransformer } from '../reis/canonical-to-reis.transformer';
 import { oraCode, oracleErrorCode } from '../flexcube/oracle-error';
+import { RecoveryDiagnostics, recoveryDiagnostics } from './staging-diagnostics';
 import { FlexcubeKycSource, normalizeSyncStartDate } from '../flexcube/source/flexcube-kyc-source';
 import { FlexcubeToCanonicalMapper } from '../flexcube/flexcube-to-canonical.mapper';
 import {
@@ -155,7 +156,24 @@ export interface UatCheckReport {
   /** The cut-off in use (FLEXCUBE_SYNC_START_DATE, normalized) and the latest maker date per branch. */
   cutoff?: string;
   branches?: { branch: string; kycs: number; latestMakerDate: string | null }[];
-  pending?: { total: number; individual: number; corporate: number; error?: string };
+  /** Our own staging rows against the current KYC versions (read-only, counts only). */
+  recovery?: RecoveryDiagnostics;
+  /** Key-person type column (I / C): never guessed, only reported. */
+  keypersonType?: {
+    configuredColumn: string;
+    present: boolean;
+    /** Columns of STTM_KYC_CORP_KEYPERSONS whose name contains TYPE (candidates to ask Finexta about). */
+    similarColumns: string[];
+  };
+  pending?: {
+    total: number;
+    individual: number;
+    corporate: number;
+    /** Corporate KYCs are only selected while the type column is proven to exist. */
+    corporateSupported?: boolean;
+    corporateSupportReason?: string;
+    error?: string;
+  };
   dryRun: { kycRefNo: string; seqNo: number; type: string; result: string; detail?: string }[];
 }
 
@@ -316,6 +334,15 @@ export async function runUatCheck(
     latestMakerDate: r.LATEST === null || r.LATEST === undefined ? null : String(r.LATEST),
   }));
   report.cutoff = normalizeSyncStartDate(syncStartDate);
+  if (report.cutoff !== undefined) {
+    report.recovery = await recoveryDiagnostics(db, staging, report.cutoff).catch(() => undefined);
+  }
+  const kp = report.tables.find((t) => t.table === 'STTM_KYC_CORP_KEYPERSONS');
+  report.keypersonType = {
+    configuredColumn: keypersonTypeColumn,
+    present: kp !== undefined && !kp.missingColumns.includes(keypersonTypeColumn),
+    similarColumns: (kp?.availableColumns ?? []).filter((c) => c.includes('TYPE')),
+  };
   report.staging = {
     privileges,
     canInsert: owned || privileges.includes('INSERT'),
@@ -344,11 +371,14 @@ export async function runUatCheck(
       });
     }
     const source = new FlexcubeKycSource(db, staging, syncStartDate as string, keypersonTypeColumn);
+    const corporateSupported = await source.refreshCorporateSupport();
     const pending = await source.findPending(200);
     report.pending = {
       total: pending.length,
       individual: pending.filter((p) => p.customerType === 'INDIVIDUAL').length,
       corporate: pending.filter((p) => p.customerType === 'CORPORATE').length,
+      corporateSupported,
+      corporateSupportReason: source.corporateSupportReason,
     };
     for (const p of pending.slice(0, dryRunLimit)) {
       const line = { kycRefNo: p.kycRefNo, seqNo: p.seqNo, type: p.customerType, result: 'OK' };
