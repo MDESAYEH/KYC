@@ -30,12 +30,17 @@ export interface StagingKey {
  * Submission lifecycle in STTM_KYC_REIS_PAYLOAD_CUSTOM (one row per KYC_REF_NO + SEQ_NO):
  *   insertNew  -> N   (row created by the integration layer when a saved KYC is detected)
  *   claim      -> W   (only from N: exactly one worker sends the submission; REQ_DATE = now)
+ *   release    -> N   (only from W, only while nothing was sent: a technical failure BEFORE the
+ *                      REIS call gives the claim back so the row stays recoverable)
  *   complete   -> S   (REIS answered: REQUEST / RESPONSE stored; RES_DATE = now)
- *              -> E   (any failure: RETRY_COUNT + 1, REQUEST / RESPONSE stored when available;
- *                      RES_DATE = now)
+ *              -> E   (the submission itself failed: RETRY_COUNT + 1, REQUEST / RESPONSE stored
+ *                      when available; RES_DATE = now)
+ *   fail       -> E   (from N or W; only for failures of the KYC itself, never for technical ones)
  * REQ_DATE / RES_DATE were added by Finexta for monitoring (10/11/2026); database time (SYSDATE).
  * REIS_FINAL_STATUS is written separately by StagingFlexcubeStatusUpdater.
- * Every value is a bind variable; only the (validated) table name is part of the SQL text.
+ *
+ * Every value is a bind variable; only the (validated) table name is part of the SQL text. Bind
+ * names must never be Oracle reserved words (`:from`, `:to` -> ORA-01745 on UAT1): see sql-binds.ts.
  */
 export class StagingSubmissionRepository {
   private readonly table: string;
@@ -56,8 +61,13 @@ export class StagingSubmissionRepository {
     try {
       await this.db.execute(
         `INSERT INTO ${this.table} (KYC_REF_NO, SEQ_NO, MSGID, PROCESS_STATUS, RETRY_COUNT) ` +
-          `VALUES (:kycRefNo, :seqNo, :msgId, :status, 0)`,
-        { kycRefNo: key.kycRefNo, seqNo: key.seqNo, msgId, status: StagingProcessStatus.NEW },
+          `VALUES (:kycRefNo, :seqNo, :msgId, :initialStatus, 0)`,
+        {
+          kycRefNo: key.kycRefNo,
+          seqNo: key.seqNo,
+          msgId,
+          initialStatus: StagingProcessStatus.NEW,
+        },
       );
       return true;
     } catch (error) {
@@ -69,11 +79,11 @@ export class StagingSubmissionRepository {
   /** N -> W. True only for the single caller that moved the row. */
   async claim(key: StagingKey): Promise<boolean> {
     const { rowsAffected } = await this.db.execute(
-      `UPDATE ${this.table} SET PROCESS_STATUS = :to, REQ_DATE = SYSDATE ` +
-        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :from`,
+      `UPDATE ${this.table} SET PROCESS_STATUS = :targetStatus, REQ_DATE = SYSDATE ` +
+        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :sourceStatus`,
       {
-        to: this.inProgress,
-        from: StagingProcessStatus.NEW,
+        targetStatus: this.inProgress,
+        sourceStatus: StagingProcessStatus.NEW,
         kycRefNo: key.kycRefNo,
         seqNo: key.seqNo,
       },
@@ -82,22 +92,42 @@ export class StagingSubmissionRepository {
   }
 
   /**
-   * N or W -> E for a submission that failed at any step (including the claim itself): RETRY_COUNT
-   * + 1, RESPONSE = the technical code, RES_DATE = now. False when no such row was left.
+   * W -> N: gives the claim back after a TECHNICAL failure that happened before anything was sent
+   * (REQUEST is still empty). The row becomes recoverable again. False when the row was no longer
+   * in progress or already holds a request: it is then left exactly as it is.
+   */
+  async release(key: StagingKey): Promise<boolean> {
+    const { rowsAffected } = await this.db.execute(
+      `UPDATE ${this.table} SET PROCESS_STATUS = :targetStatus, REQ_DATE = NULL ` +
+        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo ` +
+        `AND PROCESS_STATUS = :sourceStatus AND REQUEST IS NULL`,
+      {
+        targetStatus: StagingProcessStatus.NEW,
+        sourceStatus: this.inProgress,
+        kycRefNo: key.kycRefNo,
+        seqNo: key.seqNo,
+      },
+    );
+    return rowsAffected === 1;
+  }
+
+  /**
+   * N or W -> E for a submission whose KYC itself failed: RETRY_COUNT + 1, RESPONSE = the technical
+   * code, RES_DATE = now. False when no such row was left.
    */
   async fail(key: StagingKey, response: object): Promise<boolean> {
     const { rowsAffected } = await this.db.execute(
-      `UPDATE ${this.table} SET PROCESS_STATUS = :status, RESPONSE = :response, ` +
+      `UPDATE ${this.table} SET PROCESS_STATUS = :targetStatus, RESPONSE = :responseJson, ` +
         `RETRY_COUNT = NVL(RETRY_COUNT, 0) + 1, RES_DATE = SYSDATE ` +
         `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo ` +
-        `AND PROCESS_STATUS IN (:fromNew, :fromWork)`,
+        `AND PROCESS_STATUS IN (:sourceStatusNew, :sourceStatusWork)`,
       {
-        status: StagingProcessStatus.ERROR,
-        response: JSON.stringify(response),
+        targetStatus: StagingProcessStatus.ERROR,
+        responseJson: JSON.stringify(response),
         kycRefNo: key.kycRefNo,
         seqNo: key.seqNo,
-        fromNew: StagingProcessStatus.NEW,
-        fromWork: this.inProgress,
+        sourceStatusNew: StagingProcessStatus.NEW,
+        sourceStatusWork: this.inProgress,
       },
     );
     return rowsAffected === 1;
@@ -110,10 +140,10 @@ export class StagingSubmissionRepository {
   async findStuckInProgress(minutes: number, maxRows: number): Promise<StagingKey[]> {
     const rows = await this.db.query(
       `SELECT KYC_REF_NO, SEQ_NO FROM ${this.table} ` +
-        `WHERE PROCESS_STATUS = :inProgress AND REQ_DATE < SYSDATE - (:minutes / 1440) ` +
+        `WHERE PROCESS_STATUS = :inProgressStatus AND REQ_DATE < SYSDATE - (:ageMinutes / 1440) ` +
         `AND REGEXP_LIKE(MSGID, '${OWN_MSGID_PATTERN}', 'i') ` +
         `ORDER BY KYC_REF_NO FETCH FIRST :maxRows ROWS ONLY`,
-      { inProgress: this.inProgress, minutes, maxRows },
+      { inProgressStatus: this.inProgress, ageMinutes: minutes, maxRows },
     );
     return rows.map((r) => ({ kycRefNo: String(r.KYC_REF_NO), seqNo: Number(r.SEQ_NO) }));
   }
@@ -129,22 +159,22 @@ export class StagingSubmissionRepository {
   ): Promise<void> {
     const retry = outcome.status === StagingProcessStatus.ERROR ? 1 : 0;
     const { rowsAffected } = await this.db.execute(
-      `UPDATE ${this.table} SET PROCESS_STATUS = :status, ` +
-        `REQUEST = COALESCE(:request, REQUEST), RESPONSE = COALESCE(:response, RESPONSE), ` +
-        `RETRY_COUNT = NVL(RETRY_COUNT, 0) + :retry, RES_DATE = SYSDATE ` +
-        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :from`,
+      `UPDATE ${this.table} SET PROCESS_STATUS = :targetStatus, ` +
+        `REQUEST = COALESCE(:requestJson, REQUEST), RESPONSE = COALESCE(:responseJson, RESPONSE), ` +
+        `RETRY_COUNT = NVL(RETRY_COUNT, 0) + :retryIncrement, RES_DATE = SYSDATE ` +
+        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :sourceStatus`,
       {
-        status: outcome.status,
-        request: outcome.request === undefined ? null : JSON.stringify(outcome.request),
-        response: outcome.response === undefined ? null : JSON.stringify(outcome.response),
-        retry,
+        targetStatus: outcome.status,
+        requestJson: outcome.request === undefined ? null : JSON.stringify(outcome.request),
+        responseJson: outcome.response === undefined ? null : JSON.stringify(outcome.response),
+        retryIncrement: retry,
         kycRefNo: key.kycRefNo,
         seqNo: key.seqNo,
-        from: this.inProgress,
+        sourceStatus: this.inProgress,
       },
     );
     if (rowsAffected !== 1) {
-      throw new Error(`Staging row ${key.kycRefNo}/${key.seqNo} is not in progress`);
+      throw new Error(`Staging row is not in progress`);
     }
   }
 }

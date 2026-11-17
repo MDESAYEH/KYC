@@ -1,6 +1,6 @@
 import { Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { oraCode } from '../flexcube/oracle-error';
-import { FlexcubeSyncService } from './flexcube-sync.service';
+import { FlexcubeSyncService, SyncCycleError } from './flexcube-sync.service';
 
 /** Runs FlexcubeSyncService every intervalMs, never two passes at the same time. */
 export class FlexcubeSyncScheduler implements OnApplicationBootstrap, OnModuleDestroy {
@@ -35,10 +35,17 @@ export class FlexcubeSyncScheduler implements OnApplicationBootstrap, OnModuleDe
     try {
       await this.sync?.runOnce();
     } catch (error) {
-      this.logger.error({
-        event: 'flexcube.sync.failed',
-        error: oraCode(error),
-      });
+      this.logger.error(
+        error instanceof SyncCycleError
+          ? {
+              event: 'flexcube.sync.failed',
+              runId: error.runId,
+              phase: error.phase,
+              durationMs: error.durationMs,
+              error: error.code,
+            }
+          : { event: 'flexcube.sync.failed', error: oraCode(error) },
+      );
     }
   }
 

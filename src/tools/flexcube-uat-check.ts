@@ -258,14 +258,16 @@ export async function runUatCheck(
   // Staging privileges (direct grants, PUBLIC and roles). DELETE must NOT be granted.
   const privRows = await db
     .query(
-      `SELECT PRIVILEGE FROM ALL_TAB_PRIVS WHERE TABLE_NAME = :t
+      `SELECT PRIVILEGE FROM ALL_TAB_PRIVS WHERE TABLE_NAME = :tableName
          AND GRANTEE IN (USER, 'PUBLIC')
-       UNION SELECT PRIVILEGE FROM ROLE_TAB_PRIVS WHERE TABLE_NAME = :t`,
-      { t: stagingName },
+       UNION SELECT PRIVILEGE FROM ROLE_TAB_PRIVS WHERE TABLE_NAME = :tableName`,
+      { tableName: stagingName },
     )
     .catch(() => []);
   const owned = await db
-    .query('SELECT COUNT(*) AS N FROM USER_TABLES WHERE TABLE_NAME = :t', { t: stagingName })
+    .query('SELECT COUNT(*) AS N FROM USER_TABLES WHERE TABLE_NAME = :tableName', {
+      tableName: stagingName,
+    })
     .then((r) => Number(r[0]?.N) > 0)
     .catch(() => false);
   const privileges = [...new Set(privRows.map((r) => String(r.PRIVILEGE)))].sort();
@@ -288,15 +290,15 @@ export async function runUatCheck(
   const constraints = await db
     .query(
       `SELECT CONSTRAINT_NAME, SEARCH_CONDITION FROM ALL_CONSTRAINTS ` +
-        `WHERE TABLE_NAME = :t AND CONSTRAINT_TYPE = 'C' ORDER BY CONSTRAINT_NAME`,
-      { t: stagingName },
+        `WHERE TABLE_NAME = :tableName AND CONSTRAINT_TYPE = 'C' ORDER BY CONSTRAINT_NAME`,
+      { tableName: stagingName },
     )
     .catch(() => []);
   const triggers = await db
     .query(
       `SELECT TRIGGER_NAME, TRIGGER_TYPE, TRIGGERING_EVENT, STATUS FROM ALL_TRIGGERS ` +
-        `WHERE TABLE_NAME = :t ORDER BY TRIGGER_NAME`,
-      { t: stagingName },
+        `WHERE TABLE_NAME = :tableName ORDER BY TRIGGER_NAME`,
+      { tableName: stagingName },
     )
     .catch(() => []);
   // Maker date per branch (first 3 characters of KYC_REF_NO): helps choosing the UAT cut-off.
