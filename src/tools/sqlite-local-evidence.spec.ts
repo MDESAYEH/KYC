@@ -5,6 +5,8 @@ import { TypeOrmKycCaseRepository } from '../persistence/typeorm-kyc-case.reposi
 import { TypeOrmWebhookEventRepository } from '../persistence/typeorm-webhook-event.repository';
 import { SqliteLocalEvidence } from './sqlite-local-evidence';
 
+jest.setTimeout(30_000); // creates a migrated database per test: slow under parallel load
+
 describe('local evidence from the integration layer database (read-only SELECTs)', () => {
   let ds: DataSource;
   let evidence: SqliteLocalEvidence;
