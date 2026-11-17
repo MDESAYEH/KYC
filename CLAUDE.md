@@ -1,0 +1,8 @@
+# Resume handoff
+
+Codex continued the interrupted Claude task at the user's request on 17 November 2026.
+Before resuming, read `docs/handoff-2026-11-17.md` and inspect the current Git state.
+The work is on `fix/uat1-claim-bind-safe-recovery` / PR #1, not `main`.
+Do not repeat completed changes or overwrite another agent's edits.
+The existing boundaries remain: no merge, deployment, UAT1 `--apply`, polling enablement,
+or changes to the banking server, Oracle, REIS, systemd, or the dashboard.

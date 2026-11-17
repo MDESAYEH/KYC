@@ -10,8 +10,6 @@ export class MockFlexcubeStatusUpdater implements IFlexcubeStatusUpdater {
 
   async updateStatus(update: FlexcubeStatusUpdate): Promise<void> {
     this.received.push(update);
-    this.logger.log(
-      `MOCK FLEXCUBE update kycRefNo=${update.kycRefNo} status=${update.finalStatus}`,
-    );
+    this.logger.log(`MOCK FLEXCUBE update status=${update.finalStatus}`);
   }
 }

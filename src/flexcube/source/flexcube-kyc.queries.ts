@@ -1,3 +1,5 @@
+import { OWN_MSGID_PATTERN } from '../staging/flexcube-staging';
+
 /**
  * PROVISIONAL SQL against the FLEXCUBE KYC tables. Table and column names come from the agreed
  * mapping file (RESI-KYC_Payload Field Mappings V2_5, column "FLEXCUBE Mapping V1") and from
@@ -28,24 +30,31 @@
  *    PLACE_OF_ISSUE, NATIONAL_ID).
  */
 
-/**
- * Open KYCs created on / after the cut-off (:since, 'YYYY-MM-DDTHH24:MI:SS') whose current
- * modification has no staging row yet. AUTH_STAT is deliberately not filtered.
- */
-import { OWN_MSGID_PATTERN } from '../staging/flexcube-staging';
-
 /*
  * The key-person type column (I / C) is configurable (FLEXCUBE_KEYPERSON_TYPE_COLUMN, default
  * KYC_KEYPERSON_TYPE): UAT1 has no KYC_KEYPERSON_TYPE (OWNERSHIP_TYPE exists) and Finexta has not
  * said which column holds it. The value is validated as a plain identifier and aliased back to
- * KYC_KEYPERSON_TYPE, so only the .env changes when Finexta answers.
+ * KYC_KEYPERSON_TYPE, so only the .env changes when Finexta answers. Until the configured column
+ * is proven to exist (CORPORATE_TYPE_COLUMN_EXISTS_SQL) corporate KYCs are not selected at all.
  */
 
-export const pendingKycSql = (stagingTable: string): string =>
+/** KYC types a pass may take: individuals always, corporates only with a proven type column. */
+const typesSql = (corporate: boolean): string => (corporate ? "('R', 'C')" : "('R')");
+
+/** Is the configured key-person type column present in STTM_KYC_CORP_KEYPERSONS? (metadata only) */
+export const CORPORATE_TYPE_COLUMN_EXISTS_SQL = `
+  SELECT COUNT(*) AS N FROM ALL_TAB_COLUMNS
+   WHERE TABLE_NAME = 'STTM_KYC_CORP_KEYPERSONS' AND COLUMN_NAME = :columnName`;
+
+/**
+ * Open KYCs created on / after the cut-off (:since, 'YYYY-MM-DDTHH24:MI:SS') whose current
+ * modification has no staging row yet. AUTH_STAT is deliberately not filtered.
+ */
+export const pendingKycSql = (stagingTable: string, corporate = true): string =>
   `SELECT m.KYC_REF_NO, m.KYC_CUST_TYPE, m.MOD_NO
      FROM STTM_KYC_MASTER m
     WHERE m.RECORD_STAT = 'O'
-      AND m.KYC_CUST_TYPE IN ('R', 'C')
+      AND m.KYC_CUST_TYPE IN ${typesSql(corporate)}
       AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS')
       AND NOT EXISTS (SELECT 1 FROM ${stagingTable} s
                        WHERE s.KYC_REF_NO = m.KYC_REF_NO AND s.SEQ_NO = m.MOD_NO)
@@ -57,16 +66,16 @@ export const pendingKycSql = (stagingTable: string): string =>
  * whose KYC is still open since the cut-off: same rules as pendingKycSql, same current MOD_NO.
  * Rows that are not ours (any other MSGID, e.g. a Finexta test row) never match.
  */
-export const stuckNewKycSql = (stagingTable: string): string =>
+export const stuckNewKycSql = (stagingTable: string, corporate = true): string =>
   `SELECT m.KYC_REF_NO, m.KYC_CUST_TYPE, m.MOD_NO
      FROM STTM_KYC_MASTER m
      JOIN ${stagingTable} s ON s.KYC_REF_NO = m.KYC_REF_NO AND s.SEQ_NO = m.MOD_NO
-    WHERE s.PROCESS_STATUS = :statusNew
+    WHERE s.PROCESS_STATUS = :newStatus
       AND s.REQ_DATE IS NULL
       AND s.REQUEST IS NULL
       AND REGEXP_LIKE(s.MSGID, '${OWN_MSGID_PATTERN}', 'i')
       AND m.RECORD_STAT = 'O'
-      AND m.KYC_CUST_TYPE IN ('R', 'C')
+      AND m.KYC_CUST_TYPE IN ${typesSql(corporate)}
       AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS')
     ORDER BY m.KYC_REF_NO
     FETCH FIRST :maxRows ROWS ONLY`;

@@ -783,6 +783,8 @@ describe('KycWorkflow against a fake REIS server and a real (SQLite) repository'
       expect(lines.length).toBeGreaterThan(0);
       const all = lines.join('\n');
       expect(all).not.toContain('TOP-SECRET');
+      // no KYC reference, name or e-mail in any log line (success, duplicate, failure)
+      expect(all).not.toMatch(/KYC-L1|KYC-L2|Testfirst|Testlast|amgr@example\.test/);
       expect(JSON.stringify(failure)).not.toContain('TOP-SECRET');
       expect(failure.kycCase?.lastErrorMessage).not.toContain('TOP-SECRET');
       expect(failure.kycCase?.reisErrorMessage).toBeNull();

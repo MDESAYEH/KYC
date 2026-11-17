@@ -1,3 +1,4 @@
+import { assertValidBinds } from '../flexcube/staging/sql-binds';
 import { createTestDataSource } from '../../test/support/test-database';
 import { StrictIsoFlexcubeDateNormalizer } from '../flexcube/flexcube-date-normalizer';
 import { YesNoResidentParser } from '../flexcube/flexcube-resident-parser';
@@ -29,6 +30,14 @@ class FakeUat implements IFlexcubeSqlExecutor {
   pending: SqlRow[] = [];
   keypersonsError: Error | null = null;
   diagnosticsError: Error | null = null;
+  corporateColumn = true;
+  recoveryRows: SqlRow[] = [
+    { ROW_KIND: 'E_NEVER_SENT', KYC_STATE: 'MATCHES_CURRENT_KYC', N: 56 },
+    { ROW_KIND: 'E_NEVER_SENT', KYC_STATE: 'MOD_NO_CHANGED', N: 2 },
+    { ROW_KIND: 'N_UNCLAIMED', KYC_STATE: 'MATCHES_CURRENT_KYC', N: 1 },
+    { ROW_KIND: 'N_UNCLAIMED', KYC_STATE: 'BEFORE_CUTOFF', N: 3 },
+    { ROW_KIND: 'IN_PROGRESS', KYC_STATE: 'MATCHES_CURRENT_KYC', N: 4 },
+  ];
   details = new Map<string, SqlRow>();
 
   async execute(sql: string): Promise<{ rowsAffected: number }> {
@@ -38,6 +47,15 @@ class FakeUat implements IFlexcubeSqlExecutor {
 
   async query(sql: string, b: SqlBinds): Promise<SqlRow[]> {
     this.statements.push(sql);
+    if (!sql.includes('FROM DUAL')) assertValidBinds(sql, b); // reserved words, placeholders vs binds
+    if (sql.includes(':columnName')) return [{ N: this.corporateColumn ? 1 : 0 }];
+    if (sql.includes('ROW_KIND')) return this.recoveryRows;
+    if (sql.includes('MARKER')) {
+      return [
+        { MARKER: '{"error":"ORA-01745"}', N: 58 },
+        { MARKER: 'OTHER', N: 2 },
+      ];
+    }
     if (sql.includes('FROM DUAL')) {
       if (this.connectError) throw this.connectError;
       return [{ U: 'KYC_INTEG', S: 'FCUBS' }];
@@ -179,6 +197,46 @@ describe('UAT1 read-only check', () => {
     expect(ownerSql).toContain("REGEXP_LIKE(MSGID, '^[0-9a-f]{8}-");
   });
 
+  it('classifies our staging rows against the current KYC versions (read-only, counts only)', async () => {
+    const r = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
+    expect(r.recovery).toMatchObject({
+      autoRecoverable: 1, // N, never claimed, current MOD_NO
+      neverSentInE: 58, // E with no request and no REQ_DATE: the UAT1 ORA-01745 rows
+      needsReview: 7, // N before the cut-off (3) + rows in progress (4)
+      neverSentMarkers: [
+        { marker: '{"error":"ORA-01745"}', count: 58 },
+        { marker: 'OTHER', count: 2 },
+      ],
+    });
+    expect(r.recovery?.rows).toContainEqual({
+      rowKind: 'E_NEVER_SENT',
+      kycState: 'MOD_NO_CHANGED',
+      count: 2,
+    });
+    expect(db.statements.every((s) => /^\s*SELECT/i.test(s))).toBe(true);
+    const sql = db.statements.find((s) => s.includes('ROW_KIND'))!;
+    expect(sql).toContain('TO_DATE(:since');
+    expect(sql).toContain('REGEXP_LIKE(s.MSGID');
+    expect(JSON.stringify(r.recovery)).not.toMatch(/KYC_REF_NO/);
+  });
+
+  it('reports whether the key-person type column exists, without guessing a replacement', async () => {
+    const ok = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
+    expect(ok.keypersonType).toEqual({
+      configuredColumn: 'KYC_KEYPERSON_TYPE',
+      present: true,
+      similarColumns: ['KYC_KEYPERSON_TYPE'],
+    });
+    db.missing = { STTM_KYC_CORP_KEYPERSONS: ['KYC_KEYPERSON_TYPE'] };
+    db.corporateColumn = false;
+    const missing = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
+    expect(missing.keypersonType).toMatchObject({ present: false, similarColumns: [] });
+    expect(missing.pending).toMatchObject({
+      corporateSupported: false,
+      corporateSupportReason: 'COLUMN_NOT_FOUND',
+    });
+  });
+
   it('reports the cut-off in use and the latest maker date per branch', async () => {
     const r = await runUatCheck(db, STAGING, pipeline, 5, '2026-05-31T01:15:00');
     expect(r.cutoff).toBe('2026-05-31T01:15:00');
@@ -271,7 +329,12 @@ describe('UAT1 read-only check', () => {
     db.details.set('K-OK', GOOD_INDIVIDUAL);
     db.details.set('K-BAD', { ...GOOD_INDIVIDUAL, OCCUPATION: 'EMPL' });
     const r = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
-    expect(r.pending).toEqual({ total: 3, individual: 2, corporate: 1 });
+    expect(r.pending).toMatchObject({
+      total: 3,
+      individual: 2,
+      corporate: 1,
+      corporateSupported: true,
+    });
     expect(r.dryRun).toEqual([
       { kycRefNo: 'K-OK', seqNo: 1, type: 'INDIVIDUAL', result: 'OK' },
       {

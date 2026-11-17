@@ -1,3 +1,4 @@
+import { assertValidBinds } from '../../src/flexcube/staging/sql-binds';
 import {
   IFlexcubeSqlExecutor,
   SqlBinds,
@@ -31,6 +32,7 @@ export class FakeStagingDb implements IFlexcubeSqlExecutor {
   }
 
   async execute(sql: string, b: SqlBinds): Promise<{ rowsAffected: number }> {
+    assertValidBinds(sql, b);
     if (this.down) throw new Error('ORA-12541: TNS:no listener');
     if (!sql.includes('SET REIS_FINAL_STATUS')) throw new Error(`unexpected SQL: ${sql}`);
     const mine = this.rows.filter((r) => r.KYC_REF_NO === b.kycRefNo);
@@ -38,7 +40,7 @@ export class FakeStagingDb implements IFlexcubeSqlExecutor {
     let rowsAffected = 0;
     for (const r of mine) {
       if (r.SEQ_NO === max && (r.REIS_FINAL_STATUS === null || r.REIS_FINAL_STATUS === b.status)) {
-        r.REIS_FINAL_STATUS = String(b.status);
+        r.REIS_FINAL_STATUS = String(b.finalStatus);
         rowsAffected++;
       }
     }

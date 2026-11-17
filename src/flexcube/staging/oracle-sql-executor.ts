@@ -1,6 +1,7 @@
 import { OnModuleDestroy } from '@nestjs/common';
 import type { Pool } from 'oracledb';
 import { IFlexcubeSqlExecutor, SqlBinds, SqlRow } from './flexcube-staging';
+import { assertValidBinds } from './sql-binds';
 
 export interface FlexcubeDbConfig {
   readonly user: string;
@@ -64,6 +65,7 @@ export class OracleSqlExecutor implements IFlexcubeSqlExecutor, OnModuleDestroy 
   }
 
   async execute(sql: string, binds: SqlBinds): Promise<{ rowsAffected: number }> {
+    assertValidBinds(sql, binds); // before Oracle: reserved-word names give ORA-01745
     const conn = await (await this.getPool()).getConnection();
     try {
       const res = await conn.execute(sql, binds, { autoCommit: true });
@@ -74,6 +76,7 @@ export class OracleSqlExecutor implements IFlexcubeSqlExecutor, OnModuleDestroy 
   }
 
   async query(sql: string, binds: SqlBinds): Promise<SqlRow[]> {
+    assertValidBinds(sql, binds);
     const oracledb = (await import('oracledb')).default;
     const conn = await (await this.getPool()).getConnection();
     try {

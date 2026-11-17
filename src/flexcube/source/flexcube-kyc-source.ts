@@ -18,9 +18,11 @@ import {
   CORPORATE_PRODUCTS_SQL,
   INDIVIDUAL_KYC_SQL,
   INDIVIDUAL_PRODUCTS_SQL,
+  CORPORATE_TYPE_COLUMN_EXISTS_SQL,
   pendingKycSql,
   stuckNewKycSql,
 } from './flexcube-kyc.queries';
+import { oraCode } from '../oracle-error';
 
 /** A saved KYC waiting for REIS; seqNo is the staging SEQ_NO (FLEXCUBE MOD_NO). */
 export interface PendingKyc {
@@ -38,7 +40,7 @@ const toPendingKyc = (r: SqlRow): PendingKyc => ({
 /** The KYC detail rows could not be found (e.g. deleted or not yet committed). */
 export class KycDetailsNotFoundError extends Error {
   constructor(readonly kycRefNo: string) {
-    super(`KYC details not found for ${kycRefNo}`);
+    super('KYC details not found (the reference is not repeated here)');
     this.name = 'KycDetailsNotFoundError';
   }
 }
@@ -90,9 +92,16 @@ const text = (value: unknown): string | undefined => {
  * mapper validates them (relationship code, systemId, mandatory fields).
  */
 export class FlexcubeKycSource {
-  private readonly pendingSql: string;
-  private readonly stuckNewSql: string;
+  private readonly pendingSql: { corporate: string; individualOnly: string };
+  private readonly stuckNewSql: { corporate: string; individualOnly: string };
   private readonly keypersonsSql: string;
+  private readonly typeColumn: string;
+
+  /** Corporate KYCs are taken only after the type column was proven to exist (refresh below). */
+  private corporateSupported = false;
+  private corporateCheckedAt = Number.NEGATIVE_INFINITY;
+  /** Why corporates are (not) supported: COLUMN_FOUND, COLUMN_NOT_FOUND or the Oracle error code. */
+  corporateSupportReason = 'NOT_CHECKED';
 
   private readonly since: string;
 
@@ -109,20 +118,60 @@ export class FlexcubeKycSource {
       throw new Error('FLEXCUBE_SYNC_START_DATE must be an ISO date or timestamp (YYYY-MM-DD)');
     }
     this.since = since;
-    this.pendingSql = pendingKycSql(assertSafeTableName(stagingTable));
-    this.stuckNewSql = stuckNewKycSql(stagingTable);
-    this.keypersonsSql = corporateKeypersonsSql(assertSafeColumnName(keypersonTypeColumn));
+    const table = assertSafeTableName(stagingTable);
+    this.pendingSql = {
+      corporate: pendingKycSql(table, true),
+      individualOnly: pendingKycSql(table, false),
+    };
+    this.stuckNewSql = {
+      corporate: stuckNewKycSql(table, true),
+      individualOnly: stuckNewKycSql(table, false),
+    };
+    this.typeColumn = assertSafeColumnName(keypersonTypeColumn);
+    this.keypersonsSql = corporateKeypersonsSql(this.typeColumn);
+  }
+
+  /**
+   * Proves (metadata only, cached 10 minutes) that the configured key-person type column exists.
+   * Without it a corporate KYC cannot be told from its individual / company key persons, so
+   * corporates are not selected at all: no staging row, no error, nothing sent. Never guesses a
+   * column. A failing check also disables corporates (safe default).
+   */
+  async refreshCorporateSupport(nowMs: number = Date.now()): Promise<boolean> {
+    if (nowMs - this.corporateCheckedAt < 10 * 60_000) return this.corporateSupported;
+    this.corporateCheckedAt = nowMs;
+    try {
+      const rows = await this.db.query(CORPORATE_TYPE_COLUMN_EXISTS_SQL, {
+        columnName: this.typeColumn.toUpperCase(),
+      });
+      this.corporateSupported = Number(rows[0]?.N) > 0;
+      this.corporateSupportReason = this.corporateSupported ? 'COLUMN_FOUND' : 'COLUMN_NOT_FOUND';
+    } catch (error) {
+      this.corporateSupported = false;
+      this.corporateSupportReason = oraCode(error);
+    }
+    return this.corporateSupported;
+  }
+
+  get supportsCorporate(): boolean {
+    return this.corporateSupported;
   }
 
   async findPending(maxRows: number): Promise<PendingKyc[]> {
-    const rows = await this.db.query(this.pendingSql, { since: this.since, maxRows });
+    const sql = this.corporateSupported
+      ? this.pendingSql.corporate
+      : this.pendingSql.individualOnly;
+    const rows = await this.db.query(sql, { since: this.since, maxRows });
     return rows.map(toPendingKyc);
   }
 
   /** Our own staging rows left at N (never claimed) by an earlier failed pass, still open. */
   async findOwnStuckNew(maxRows: number): Promise<PendingKyc[]> {
-    const rows = await this.db.query(this.stuckNewSql, {
-      statusNew: 'N',
+    const sql = this.corporateSupported
+      ? this.stuckNewSql.corporate
+      : this.stuckNewSql.individualOnly;
+    const rows = await this.db.query(sql, {
+      newStatus: 'N',
       since: this.since,
       maxRows,
     });

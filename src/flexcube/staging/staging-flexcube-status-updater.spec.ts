@@ -1,3 +1,4 @@
+import { assertValidBinds } from './sql-binds';
 import { ReisFinalStatus } from '../../reis/reis-status';
 import { MockFlexcubeStatusUpdater } from '../mock-flexcube-status-updater';
 import {
@@ -27,6 +28,7 @@ class FakeStaging implements IFlexcubeSqlExecutor {
   }
 
   async execute(sql: string, binds: Record<string, string | number | null>) {
+    assertValidBinds(sql, binds);
     this.calls.push({ sql, binds });
     const mine = this.rows.filter((r) => r.KYC_REF_NO === binds.kycRefNo);
     const maxSeq = Math.max(...mine.map((r) => r.SEQ_NO));
@@ -34,9 +36,9 @@ class FakeStaging implements IFlexcubeSqlExecutor {
     for (const r of mine) {
       if (
         r.SEQ_NO === maxSeq &&
-        (r.REIS_FINAL_STATUS === null || r.REIS_FINAL_STATUS === binds.status)
+        (r.REIS_FINAL_STATUS === null || r.REIS_FINAL_STATUS === binds.finalStatus)
       ) {
-        r.REIS_FINAL_STATUS = String(binds.status);
+        r.REIS_FINAL_STATUS = String(binds.finalStatus);
         rowsAffected++;
       }
     }
@@ -87,7 +89,7 @@ describe('StagingFlexcubeStatusUpdater', () => {
     await updater.updateStatus(update("K'1", ReisFinalStatus.BLOCKED));
     expect(db.calls[0].sql).not.toContain("K'1");
     expect(db.calls[0].sql).toContain('STTM_KYC_REIS_PAYLOAD_CUSTOM');
-    expect(db.calls[0].binds).toEqual({ status: 'BLOCKED', kycRefNo: "K'1" });
+    expect(db.calls[0].binds).toEqual({ finalStatus: 'BLOCKED', kycRefNo: "K'1" });
   });
 
   it('is idempotent for the same status', async () => {

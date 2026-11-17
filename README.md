@@ -95,6 +95,11 @@ npm run check:uat1
 
 Then enable polling. See [docs/setup.md](docs/setup.md) and [docs/uat-readiness.md](docs/uat-readiness.md).
 
+## Operations
+
+- UAT1 deployment, backup and rollback: [docs/deployment-uat1.md](docs/deployment-uat1.md).
+- Safety of the staging rows, circuit breaker, logs and reconciliation (`npm run reconcile:staging`, dry run by default): [docs/flexcube-sync.md](docs/flexcube-sync.md).
+
 ## Security notes
 
 - Credentials come only from the environment / `.env`; TLS certificate validation is never disabled.

@@ -17,7 +17,7 @@ import { ReisAuthClient } from '../src/reis/reis-auth.client';
 import { ReisOnboardingClient } from '../src/reis/reis-onboarding.client';
 import { ReisConfig } from '../src/reis/reis.config';
 import { ReisHttpTransport } from '../src/reis/transport/reis-http.transport';
-import { FakeFlexcubeKycDb } from './support/fake-flexcube-kyc-db';
+import { FakeFlexcubeDb } from './support/fake-flexcube-db';
 import { FakeReisServer } from './support/fake-reis-server';
 import { seededMappings } from './support/in-memory-reference-mappings';
 import { createTestDataSource } from './support/test-database';
@@ -87,7 +87,7 @@ const KEY_PERSON_C: SqlRow = {
 describe('FLEXCUBE poller -> REIS: corporate KYC with key persons', () => {
   let ds: DataSource;
   let server: FakeReisServer;
-  let db: FakeFlexcubeKycDb;
+  let db: FakeFlexcubeDb;
   let sync: FlexcubeSyncService;
 
   beforeEach(async () => {
@@ -121,7 +121,7 @@ describe('FLEXCUBE poller -> REIS: corporate KYC with key persons', () => {
       new ReisOnboardingClient(new ReisAuthClient(transport, config), transport),
       new MockFlexcubeStatusUpdater(),
     );
-    db = new FakeFlexcubeKycDb();
+    db = new FakeFlexcubeDb();
     db.master = [{ KYC_REF_NO: 'KYC-C1', KYC_CUST_TYPE: 'C', MOD_NO: 1, AUTH_STAT: 'A' }];
     db.details.set('KYC-C1', CORPORATE_ROW);
     db.products.set('KYC-C1', ['T-PROD']);

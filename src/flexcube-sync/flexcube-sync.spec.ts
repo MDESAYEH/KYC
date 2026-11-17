@@ -6,202 +6,25 @@ import {
   oracleDate,
   PendingKyc,
 } from '../flexcube/source/flexcube-kyc-source';
-import {
-  IFlexcubeSqlExecutor,
-  OWN_MSGID_PATTERN,
-  SqlBinds,
-  SqlRow,
-} from '../flexcube/staging/flexcube-staging';
+import { SqlRow } from '../flexcube/staging/flexcube-staging';
 import {
   StagingProcessStatus,
   StagingSubmissionRepository,
 } from '../flexcube/staging/staging-submission.repository';
+import { FakeFlexcubeDb } from '../../test/support/fake-flexcube-db';
+import { INDIVIDUAL_ROW, onboarded, SINCE } from '../../test/support/sync-fixtures';
 import { IKycWorkflow } from '../kyc/kyc.interfaces';
-import { KycSubmissionResult } from '../kyc/kyc-submission.result';
 import { createFlexcubeSync, FlexcubeSyncConfigError } from './flexcube-sync.module';
 import { FlexcubeSyncScheduler } from './flexcube-sync.scheduler';
 import { FlexcubeSyncService } from './flexcube-sync.service';
 
-type StagingRow = {
-  KYC_REF_NO: string;
-  SEQ_NO: number;
-  MSGID: string;
-  PROCESS_STATUS: string;
-  REQUEST: string | null;
-  RESPONSE: string | null;
-  RETRY_COUNT: number;
-  REQ_DATE?: string;
-  RES_DATE?: string;
-  /** Test-only: minutes since the row was claimed (the fake has no clock). */
-  AGE_MIN?: number;
-};
-
-/**
- * Tiny in-memory stand-in for the FLEXCUBE database: it understands exactly the statements the
- * integration layer issues (staging INSERT / UPDATE, pending + detail SELECTs). Synthetic data.
- */
-class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
-  staging: StagingRow[] = [];
-  master: {
-    KYC_REF_NO: string;
-    KYC_CUST_TYPE: string;
-    MOD_NO: number;
-    AUTH_STAT: string;
-    RECORD_STAT?: string;
-    /** Normalized YYYY-MM-DDTHH:MM:SS; default is after the test cut-off. */
-    MAKER_DT_STAMP?: string;
-  }[] = [];
-  pendingCalls: { sql: string; binds: SqlBinds }[] = [];
-  details = new Map<string, SqlRow>();
-  products = new Map<string, string[]>();
-  countries = new Map<string, string[]>();
-  keyPersons = new Map<string, SqlRow[]>();
-  allSql: { sql: string; binds: SqlBinds }[] = [];
-  failInsertWith: Error | null = null;
-  /** Returns an error to make a statement fail (e.g. a CHECK constraint on the claim UPDATE). */
-  executeHook: ((sql: string, b: SqlBinds) => Error | undefined) | null = null;
-  queryHook: ((sql: string, b: SqlBinds) => Error | undefined) | null = null;
-
-  async execute(sql: string, b: SqlBinds) {
-    const hooked = this.executeHook?.(sql, b);
-    if (hooked) throw hooked;
-    const find = () =>
-      this.staging.filter((r) => r.KYC_REF_NO === b.kycRefNo && r.SEQ_NO === b.seqNo);
-    if (sql.startsWith('INSERT')) {
-      if (this.failInsertWith) throw this.failInsertWith;
-      if (find().length) throw new Error('ORA-00001: unique constraint violated');
-      this.staging.push({
-        KYC_REF_NO: String(b.kycRefNo),
-        SEQ_NO: Number(b.seqNo),
-        MSGID: String(b.msgId),
-        PROCESS_STATUS: String(b.status),
-        REQUEST: null,
-        RESPONSE: null,
-        RETRY_COUNT: 0,
-      });
-      return { rowsAffected: 1 };
-    }
-    if (sql.includes('PROCESS_STATUS IN (:fromNew, :fromWork)')) {
-      const failed = find().filter((r) => [b.fromNew, b.fromWork].includes(r.PROCESS_STATUS));
-      for (const r of failed) {
-        r.PROCESS_STATUS = String(b.status);
-        r.RESPONSE = b.response as string;
-        r.RETRY_COUNT += 1;
-        r.RES_DATE = 'SYSDATE';
-      }
-      return { rowsAffected: failed.length };
-    }
-    const rows = find().filter((r) => r.PROCESS_STATUS === b.from);
-    for (const r of rows) {
-      if (sql.includes('REQUEST = COALESCE')) {
-        r.PROCESS_STATUS = String(b.status);
-        r.REQUEST = (b.request as string | null) ?? r.REQUEST;
-        r.RESPONSE = (b.response as string | null) ?? r.RESPONSE;
-        r.RETRY_COUNT += Number(b.retry);
-        if (sql.includes('RES_DATE = SYSDATE')) r.RES_DATE = 'SYSDATE';
-      } else {
-        r.PROCESS_STATUS = String(b.to);
-        if (sql.includes('REQ_DATE = SYSDATE')) r.REQ_DATE = 'SYSDATE';
-      }
-    }
-    return { rowsAffected: rows.length };
-  }
-
-  async query(sql: string, b: SqlBinds): Promise<SqlRow[]> {
-    const hooked = this.queryHook?.(sql, b);
-    if (hooked) throw hooked;
-    if (sql.includes('s.REQ_DATE IS NULL')) {
-      // recovery of our own rows left at N: UUID MSGID, never claimed, open KYC since the cut-off
-      const uuid = new RegExp(OWN_MSGID_PATTERN, 'i');
-      return this.master
-        .filter((m) => (m.RECORD_STAT ?? 'O') === 'O' && ['R', 'C'].includes(m.KYC_CUST_TYPE))
-        .filter((m) => (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= String(b.since))
-        .filter((m) =>
-          this.staging.some(
-            (s) =>
-              s.KYC_REF_NO === m.KYC_REF_NO &&
-              s.SEQ_NO === m.MOD_NO &&
-              s.PROCESS_STATUS === b.statusNew &&
-              s.REQ_DATE === undefined &&
-              s.REQUEST === null &&
-              uuid.test(s.MSGID),
-          ),
-        )
-        .slice(0, Number(b.maxRows));
-    }
-    if (sql.includes('REQ_DATE < SYSDATE')) {
-      const uuid = new RegExp(OWN_MSGID_PATTERN, 'i');
-      return this.staging
-        .filter(
-          (s) =>
-            s.PROCESS_STATUS === b.inProgress &&
-            (s.AGE_MIN ?? 0) > Number(b.minutes) &&
-            uuid.test(s.MSGID),
-        )
-        .map((s) => ({ KYC_REF_NO: s.KYC_REF_NO, SEQ_NO: s.SEQ_NO }));
-    }
-    if (sql.includes('FROM STTM_KYC_MASTER')) {
-      this.pendingCalls.push({ sql, binds: b });
-      return this.master
-        .filter((m) => (m.RECORD_STAT ?? 'O') === 'O' && ['R', 'C'].includes(m.KYC_CUST_TYPE))
-        .filter((m) => (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= String(b.since))
-        .filter(
-          (m) => !this.staging.some((s) => s.KYC_REF_NO === m.KYC_REF_NO && s.SEQ_NO === m.MOD_NO),
-        )
-        .slice(0, Number(b.maxRows));
-    }
-    const k = String(b.kycRefNo);
-    this.allSql.push({ sql, binds: b });
-    if (sql.includes('STTM_KYC_CORP_KEYPERSONS')) return this.keyPersons.get(k) ?? [];
-    if (sql.includes('PRODUCT_CUSTOM')) {
-      return (this.products.get(k) ?? []).map((p) => ({ PRODUCT_CODE: p }));
-    }
-    if (sql.includes('STTM_KYC_CORP_COUNTRY_CUSTOM')) {
-      return (this.countries.get(k) ?? []).map((c) => ({ OPERATION_COUNTRY: c }));
-    }
-    const d = this.details.get(k);
-    return d ? [d] : [];
-  }
-}
-
-const SINCE = '2026-11-16';
-
-const INDIVIDUAL_ROW: SqlRow = {
-  FIRST_NAME: ' Testfirst ',
-  LAST_NAME: 'Testlast',
-  BIRTH_DATE: new Date(1990, 0, 31),
-  BIRTH_PLACE: null,
-  PASSPORT_NO: 'P123',
-  PASSPORT_EXPIRY_DATE: new Date(2030, 11, 1),
-  PEP: 'N',
-  RELATION_PEP: 'N',
-  NATIONALITY: 'LY',
-  LOCAL_ADDR_COUNTRY: 'LY',
-  OCCUPATION: 'PRSE',
-  ACC_PURPOSE: 'JOBS',
-  RESIDENT: 'Y',
-  FUNDS_SOURCE: 'BUSN',
-  TOTAL_INCOME: 3000,
-  ACCOUNT_MANAGER_LOGIN: 'amgr',
-  ACCOUNT_MANAGER_EMAIL: 'amgr@example.test',
-  DISTRIBUTION_CHANNEL: '00',
-};
-
-const onboarded = (status = 'CLEAN'): KycSubmissionResult =>
-  ({
-    outcome: 'ONBOARDED',
-    reisOnboardingStatus: status,
-    kycCase: {},
-    reisRequest: { systemId: 'X' },
-    reisResponse: { status },
-  }) as unknown as KycSubmissionResult;
-
 describe('FlexcubeKycSource (provisional STTM queries)', () => {
   let db: FakeFlexcubeDb;
   let source: FlexcubeKycSource;
-  beforeEach(() => {
+  beforeEach(async () => {
     db = new FakeFlexcubeDb();
     source = new FlexcubeKycSource(db, 'STTM_KYC_REIS_PAYLOAD_CUSTOM', SINCE);
+    await source.refreshCorporateSupport();
   });
 
   it('finds open KYCs of any AUTH_STAT whose current MOD_NO has no staging row', async () => {
@@ -547,7 +370,9 @@ describe('FlexcubeSyncService (one polling pass)', () => {
       ['K1', 'E'],
       ['K9', 'S'],
     ]);
-    expect(db.staging[0].RESPONSE).toBe(JSON.stringify({ error: 'TypeError' }));
+    expect(db.staging[0].RESPONSE).toBe(
+      JSON.stringify({ error: 'TypeError', delivery: 'UNCERTAIN' }),
+    );
   });
 
   it('missing KYC details end as E without calling REIS', async () => {
@@ -584,9 +409,9 @@ describe('FlexcubeSyncService (one polling pass)', () => {
     );
     expect(await custom.runOnce()).toMatchObject({ sent: 1, failed: 0 });
     for (const [sql, binds] of spy.mock.calls) {
-      if (sql.includes('SET PROCESS_STATUS = :to')) seen.push(binds);
+      if (sql.includes('REQ_DATE = SYSDATE')) seen.push(binds);
     }
-    expect(seen).toEqual([{ to: 'P', from: 'N', kycRefNo: 'K1', seqNo: 2 }]);
+    expect(seen).toEqual([{ targetStatus: 'P', sourceStatus: 'N', kycRefNo: 'K1', seqNo: 2 }]);
     expect(db.staging[0].PROCESS_STATUS).toBe('S'); // completed from P, not from W
     // the default is untouched
     expect(StagingProcessStatus.IN_PROGRESS).toBe('W');
@@ -604,297 +429,6 @@ describe('FlexcubeSyncService (one polling pass)', () => {
       RETRY_COUNT: 0,
     });
     expect(await repo.claim({ kycRefNo: 'KX', seqNo: 1 })).toBe(false);
-  });
-
-  describe('recovery of stuck rows', () => {
-    const own = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
-    const stuckRow = (kyc: string, over: Partial<StagingRow> = {}): StagingRow => ({
-      KYC_REF_NO: kyc,
-      SEQ_NO: 1,
-      MSGID: own,
-      PROCESS_STATUS: 'N',
-      REQUEST: null,
-      RESPONSE: null,
-      RETRY_COUNT: 0,
-      ...over,
-    });
-    let warned: Record<string, unknown>[];
-    let warnSpy: jest.SpyInstance;
-    beforeEach(() => {
-      warned = [];
-      warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation((m: unknown) => {
-        warned.push(m as Record<string, unknown>);
-      });
-      db.master = [
-        { KYC_REF_NO: 'K1', KYC_CUST_TYPE: 'R', MOD_NO: 1, AUTH_STAT: 'U' },
-        { KYC_REF_NO: 'K2', KYC_CUST_TYPE: 'R', MOD_NO: 1, AUTH_STAT: 'U' },
-        { KYC_REF_NO: 'TEST123', KYC_CUST_TYPE: 'R', MOD_NO: 1, AUTH_STAT: 'U' },
-      ];
-      for (const k of ['K1', 'K2', 'TEST123']) {
-        db.details.set(k, INDIVIDUAL_ROW);
-        db.products.set(k, ['SALR']);
-      }
-    });
-    afterEach(() => warnSpy.mockRestore());
-
-    it('sends our own rows left at N by a failed pass, without inserting a second row', async () => {
-      db.master = db.master.filter((m) => m.KYC_REF_NO !== 'TEST123');
-      db.staging.push(stuckRow('K1'));
-      expect(await sync.runOnce()).toEqual({ found: 2, sent: 2, failed: 0, skipped: 0 });
-      expect(db.staging.filter((r) => r.KYC_REF_NO === 'K1')).toHaveLength(1);
-      expect(db.staging.find((r) => r.KYC_REF_NO === 'K1')).toMatchObject({
-        MSGID: own,
-        PROCESS_STATUS: 'S',
-        REQ_DATE: 'SYSDATE',
-      });
-      expect(workflow.submit.mock.calls.map((c) => c[0].KYC_REF_NO)).toEqual(['K1', 'K2']);
-    });
-
-    it('never touches rows that are not ours (non-UUID MSGID such as TEST123)', async () => {
-      const finexta = stuckRow('TEST123', {
-        MSGID: 'TEST123',
-        REIS_FINAL_STATUS: 'BLOCKED',
-      } as never);
-      db.staging.push(finexta);
-      db.master = db.master.filter((m) => m.KYC_REF_NO === 'TEST123');
-      expect(await sync.runOnce()).toEqual({ found: 0, sent: 0, failed: 0, skipped: 0 });
-      expect(workflow.submit).not.toHaveBeenCalled();
-      expect(db.staging).toEqual([finexta]);
-      expect(db.staging[0].PROCESS_STATUS).toBe('N');
-      expect(db.staging[0].REQ_DATE).toBeUndefined();
-    });
-
-    it('does not recover rows that were already claimed, hold a request, or are before the cut-off', async () => {
-      db.staging.push(
-        stuckRow('K1', { REQ_DATE: 'SYSDATE', PROCESS_STATUS: 'N' }),
-        stuckRow('K2', { REQUEST: '{"x":1}' }),
-      );
-      db.master.push({
-        KYC_REF_NO: 'OLD',
-        KYC_CUST_TYPE: 'R',
-        MOD_NO: 1,
-        AUTH_STAT: 'U',
-        MAKER_DT_STAMP: '2026-05-01T00:00:00',
-      });
-      db.staging.push(stuckRow('OLD'));
-      db.master = db.master.filter((m) => m.KYC_REF_NO !== 'TEST123');
-      expect(await sync.runOnce()).toEqual({ found: 0, sent: 0, failed: 0, skipped: 0 });
-      expect(workflow.submit).not.toHaveBeenCalled();
-    });
-
-    it('a recovered row whose claim fails again is marked E and the pass continues', async () => {
-      db.staging.push(stuckRow('K1'));
-      db.executeHook = (sql, b) =>
-        sql.includes('SET PROCESS_STATUS = :to') && b.kycRefNo === 'K1'
-          ? new Error('ORA-02290: check constraint violated')
-          : undefined;
-      jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
-      expect(await sync.runOnce()).toMatchObject({ failed: 1, sent: 2 });
-      expect(db.staging.find((r) => r.KYC_REF_NO === 'K1')).toMatchObject({
-        PROCESS_STATUS: 'E',
-        RESPONSE: JSON.stringify({ error: 'ORA-02290' }),
-      });
-    });
-
-    it('logs rows stuck in progress for more than 15 minutes once, and never resends them', async () => {
-      db.master = db.master.filter((m) => m.KYC_REF_NO === 'K1');
-      db.staging.push(
-        stuckRow('K1', { PROCESS_STATUS: 'W', REQ_DATE: 'SYSDATE', AGE_MIN: 16 }),
-        stuckRow('K2', { PROCESS_STATUS: 'W', REQ_DATE: 'SYSDATE', AGE_MIN: 5 }),
-        stuckRow('TEST123', { PROCESS_STATUS: 'W', MSGID: 'TEST123', AGE_MIN: 999 }),
-      );
-      await sync.runOnce();
-      await sync.runOnce();
-      expect(warned).toEqual([
-        { event: 'flexcube.sync.stuckInProgress', kycRefNo: 'K1', seqNo: 1 },
-      ]);
-      expect(workflow.submit).not.toHaveBeenCalled();
-      expect(db.staging.map((r) => [r.KYC_REF_NO, r.PROCESS_STATUS])).toEqual([
-        ['K1', 'W'],
-        ['K2', 'W'],
-        ['TEST123', 'W'],
-      ]);
-    });
-
-    it('a failing recovery query is logged with its code and the normal pass still runs', async () => {
-      const errors: unknown[] = [];
-      jest.spyOn(Logger.prototype, 'error').mockImplementation((m: unknown) => {
-        errors.push(m);
-      });
-      db.queryHook = (sql) =>
-        sql.includes('s.REQ_DATE IS NULL') ? new Error('ORA-00942: SECRET') : undefined;
-      db.master = db.master.filter((m) => m.KYC_REF_NO === 'K1');
-      expect(await sync.runOnce()).toMatchObject({ found: 1, sent: 1 });
-      expect(errors).toEqual([{ event: 'flexcube.sync.recoverFailed', error: 'ORA-00942' }]);
-    });
-
-    it('the recovery SQL is a read-only SELECT with bind variables for the cut-off and status', async () => {
-      const spy = jest.spyOn(db, 'query');
-      await sync.runOnce();
-      const sql = spy.mock.calls.map((c) => c[0]).find((q) => q.includes('s.REQ_DATE IS NULL'))!;
-      expect(sql.trim()).toMatch(/^SELECT/);
-      expect(sql).toContain('s.PROCESS_STATUS = :statusNew');
-      expect(sql).toContain('TO_DATE(:since');
-      expect(sql).toContain("REGEXP_LIKE(s.MSGID, '^[0-9a-f]{8}-");
-    });
-  });
-
-  describe('one KYC never stops the pass', () => {
-    const CORP_ROW: SqlRow = {
-      CRP_BUSINESS_NAME: 'Test Co',
-      PARENT_CMPNY_COUNTRY: 'LY',
-      LEGAL_ENTITY: 'LIMCO',
-      ACTIVITY: 'COMM',
-      ACC_PURPOSE: 'COMM',
-      FUNDS_SOURCE: 'CCMP',
-      ANNUAL_TURNOVER: 500000,
-      PEP: 'N',
-      ACCOUNT_MANAGER_LOGIN: 'amgr',
-      ACCOUNT_MANAGER_EMAIL: 'amgr@example.test',
-      DISTRIBUTION_CHANNEL: '00',
-    };
-    let logged: Record<string, unknown>[];
-    let errorSpy: jest.SpyInstance;
-    beforeEach(() => {
-      logged = [];
-      errorSpy = jest.spyOn(Logger.prototype, 'error').mockImplementation((m: unknown) => {
-        logged.push(m as Record<string, unknown>);
-      });
-      db.master = [
-        { KYC_REF_NO: 'K1', KYC_CUST_TYPE: 'R', MOD_NO: 1, AUTH_STAT: 'U' },
-        { KYC_REF_NO: 'K2', KYC_CUST_TYPE: 'R', MOD_NO: 1, AUTH_STAT: 'U' },
-      ];
-      db.details.set('K1', INDIVIDUAL_ROW);
-      db.details.set('K2', INDIVIDUAL_ROW);
-      db.products.set('K1', ['SALR']);
-      db.products.set('K2', ['SALR']);
-    });
-    afterEach(() => errorSpy.mockRestore());
-
-    const claimOf = (kyc: string) => (sql: string, b: SqlBinds) =>
-      sql.includes('SET PROCESS_STATUS = :to') && b.kycRefNo === kyc;
-
-    it('the claim fails (e.g. a CHECK constraint on W): the row is marked E and the next KYC is sent', async () => {
-      db.executeHook = (sql, b) =>
-        claimOf('K1')(sql, b)
-          ? new Error('ORA-02290: check constraint (FCUBS.SECRET_CK) violated')
-          : undefined;
-      expect(await sync.runOnce()).toEqual({ found: 2, sent: 1, failed: 1, skipped: 0 });
-      expect(db.staging.map((r) => [r.KYC_REF_NO, r.PROCESS_STATUS])).toEqual([
-        ['K1', 'E'],
-        ['K2', 'S'],
-      ]);
-      expect(db.staging[0]).toMatchObject({
-        RESPONSE: JSON.stringify({ error: 'ORA-02290' }),
-        RETRY_COUNT: 1,
-        RES_DATE: 'SYSDATE',
-      });
-      expect(workflow.submit).toHaveBeenCalledTimes(1);
-    });
-
-    it('marking E fails too: logged with its code, the pass continues, the row stays N', async () => {
-      db.executeHook = (sql, b) =>
-        b.kycRefNo === 'K1' && sql.startsWith('UPDATE')
-          ? new Error('ORA-02290: check constraint (FCUBS.SECRET_CK) violated')
-          : undefined;
-      expect(await sync.runOnce()).toEqual({ found: 2, sent: 1, failed: 1, skipped: 0 });
-      expect(db.staging.map((r) => [r.KYC_REF_NO, r.PROCESS_STATUS])).toEqual([
-        ['K1', 'N'],
-        ['K2', 'S'],
-      ]);
-      expect(logged).toEqual([
-        {
-          event: 'flexcube.sync.kycFailed',
-          kycRefNo: 'K1',
-          seqNo: 1,
-          step: 'claim',
-          error: 'ORA-02290',
-        },
-        {
-          event: 'flexcube.sync.markErrorFailed',
-          kycRefNo: 'K1',
-          seqNo: 1,
-          step: 'claim',
-          error: 'ORA-02290',
-        },
-      ]);
-    });
-
-    it('an insert error is logged for that KYC only and the pass continues (nothing to mark)', async () => {
-      db.executeHook = (sql, b) =>
-        sql.startsWith('INSERT') && b.kycRefNo === 'K1'
-          ? new Error('ORA-12541: no listener at SECRET_HOST')
-          : undefined;
-      expect(await sync.runOnce()).toEqual({ found: 2, sent: 1, failed: 1, skipped: 0 });
-      expect(db.staging.map((r) => r.KYC_REF_NO)).toEqual(['K2']);
-      expect(logged).toEqual([
-        {
-          event: 'flexcube.sync.kycFailed',
-          kycRefNo: 'K1',
-          seqNo: 1,
-          step: 'insert',
-          error: 'ORA-12541',
-        },
-      ]);
-    });
-
-    it('a key-person query error ends the corporate KYC as E with the ORA code; individuals still flow', async () => {
-      db.master.unshift({ KYC_REF_NO: 'KC', KYC_CUST_TYPE: 'C', MOD_NO: 1, AUTH_STAT: 'U' });
-      db.details.set('KC', CORP_ROW);
-      db.products.set('KC', ['AFIC']);
-      db.queryHook = (sql) =>
-        sql.includes('STTM_KYC_CORP_KEYPERSONS')
-          ? new Error('ORA-00904: "K"."SECRET_COLUMN": invalid identifier')
-          : undefined;
-      expect(await sync.runOnce()).toEqual({ found: 3, sent: 2, failed: 1, skipped: 0 });
-      expect(db.staging.map((r) => [r.KYC_REF_NO, r.PROCESS_STATUS])).toEqual([
-        ['KC', 'E'],
-        ['K1', 'S'],
-        ['K2', 'S'],
-      ]);
-      expect(db.staging[0].RESPONSE).toBe(JSON.stringify({ error: 'ORA-00904' }));
-      expect(logged).toEqual([
-        {
-          event: 'flexcube.sync.kycFailed',
-          kycRefNo: 'KC',
-          seqNo: 1,
-          step: 'load',
-          error: 'ORA-00904',
-        },
-      ]);
-    });
-
-    it('logs only the code: never the message, SQL, binds or customer data', async () => {
-      db.executeHook = (sql, b) =>
-        claimOf('K1')(sql, b)
-          ? new Error('ORA-02290: check constraint (FCUBS.SECRET_CK) violated, value Testfirst')
-          : undefined;
-      workflow.submit.mockRejectedValueOnce(new TypeError('Testlast leaked in a message'));
-      await sync.runOnce();
-      const text = JSON.stringify(logged) + JSON.stringify(db.staging);
-      expect(text).not.toMatch(/SECRET_CK|Testfirst|Testlast|FCUBS|UPDATE|amgr/);
-      expect(logged.every((l) => typeof l.error === 'string' && l.step)).toBe(true);
-    });
-
-    it('a failing complete step is logged and marks the row E', async () => {
-      workflow.submit.mockResolvedValue(onboarded());
-      db.executeHook = (sql, b) =>
-        sql.includes('REQUEST = COALESCE') && b.kycRefNo === 'K1'
-          ? new Error('ORA-01400: cannot insert NULL')
-          : undefined;
-      expect(await sync.runOnce()).toMatchObject({ sent: 1, failed: 1 });
-      expect(db.staging[0]).toMatchObject({
-        PROCESS_STATUS: 'E',
-        RESPONSE: JSON.stringify({ error: 'ORA-01400' }),
-      });
-      expect(logged[0]).toMatchObject({ step: 'complete', error: 'ORA-01400' });
-    });
-
-    it('only an error in the pending query fails the whole pass', async () => {
-      db.queryHook = (sql) =>
-        sql.includes('FROM STTM_KYC_MASTER') ? new Error('ORA-00942: x') : undefined;
-      await expect(sync.runOnce()).rejects.toThrow('ORA-00942');
-    });
   });
 });
 

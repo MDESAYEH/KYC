@@ -10,7 +10,7 @@ import {
 /** No staging row could be updated for the KYC (missing row, or a different final status). */
 export class StagingRowNotUpdatedError extends Error {
   constructor(readonly kycRefNo: string) {
-    super(`No staging row updated for KYC ${kycRefNo}`);
+    super('No staging row was updated for the KYC (the reference is not repeated here)');
     this.name = 'StagingRowNotUpdatedError';
   }
 }
@@ -31,19 +31,19 @@ export class StagingFlexcubeStatusUpdater implements IFlexcubeStatusUpdater {
   ) {
     const t = assertSafeTableName(table);
     this.sql =
-      `UPDATE ${t} SET REIS_FINAL_STATUS = :status ` +
+      `UPDATE ${t} SET REIS_FINAL_STATUS = :finalStatus ` +
       `WHERE KYC_REF_NO = :kycRefNo ` +
       `AND SEQ_NO = (SELECT MAX(SEQ_NO) FROM ${t} WHERE KYC_REF_NO = :kycRefNo) ` +
-      `AND (REIS_FINAL_STATUS IS NULL OR REIS_FINAL_STATUS = :status)`;
+      `AND (REIS_FINAL_STATUS IS NULL OR REIS_FINAL_STATUS = :finalStatus)`;
   }
 
   async updateStatus(update: FlexcubeStatusUpdate): Promise<void> {
     const status = toStagingFinalStatus(update.finalStatus);
     const { rowsAffected } = await this.db.execute(this.sql, {
-      status,
+      finalStatus: status,
       kycRefNo: update.kycRefNo,
     });
     if (rowsAffected !== 1) throw new StagingRowNotUpdatedError(update.kycRefNo);
-    this.logger.log({ event: 'flexcube.staging.finalStatus', kycRefNo: update.kycRefNo, status });
+    this.logger.log({ event: 'flexcube.staging.finalStatus', status });
   }
 }
