@@ -71,7 +71,10 @@ The claim stays conditional (only from `N`), so two instances never send the sam
 `STTM_KYC_CORP_KEYPERSONS` that holds the party type `I` / `C`. UAT1 has no `KYC_KEYPERSON_TYPE` column
 (`OWNERSHIP_TYPE` exists) and Finexta has not said which column to use; when they answer only `.env` changes.
 The SELECT aliases it back to `KYC_KEYPERSON_TYPE`, and `npm run check:uat1` checks the configured column.
-While the column is wrong, a corporate KYC ends as `E` with the `ORA-00904` code and individuals keep flowing.
+Corporate KYCs are only selected while that column is proven to exist (a metadata check, repeated every
+10 minutes, `flexcube.sync.corporateDisabled` when it is missing): without it no corporate KYC is claimed, no row is
+written and nothing is sent. Individuals keep flowing. Never replace the column by a guess (`OWNERSHIP_TYPE`):
+only Finexta can confirm it.
 
 ## UAT check diagnostics (`npm run check:uat1`, read-only)
 
@@ -84,23 +87,84 @@ data) shows, all with SELECT only:
 - the pending KYCs with the current `FLEXCUBE_SYNC_START_DATE`, and the latest `MAKER_DT_STAMP` per branch
   (first 3 characters of `KYC_REF_NO`), to choose the cut-off on UAT.
 
+## SQL bind variable names (ORA-01745)
+
+UAT1, 17/11/2026: the claim `UPDATE` failed for every KYC with **ORA-01745** (invalid host/bind variable name)
+because it used the bind variables `:to` and `:from`, which are Oracle reserved words (`complete()` used `:from`
+too). The names are now `targetStatus`, `sourceStatus`, `initialStatus`, `responseJson`, ... and every statement
+is checked by `assertValidBinds` (`src/flexcube/staging/sql-binds.ts`) before it reaches Oracle: no reserved word,
+and the placeholders must match the supplied binds exactly. The in-memory test databases apply the same check, and
+`test/oracle-staging.sql.integration.spec.ts` runs the staging statements (and reproduces ORA-01745) on a real,
+isolated Oracle schema when the person running it sets the `KYC_ORACLE_TEST_*` variables (skipped otherwise).
+The cause is considered proven only after that test passes on Oracle; until then it is the best-supported cause.
+
+## Failures never damage a staging row
+
+A failure is classified (`src/flexcube-sync/flexcube-sync.service.ts`) and the class decides what happens to the row:
+
+| Failure | Example | Row | Retried |
+| --- | --- | --- | --- |
+| **technical** at the INSERT / claim | ORA-01745, ORA-02290, ORA-01031, ORA-00942, lost connection | stays `N` (never `E`) | recovered by the next pass |
+| **technical** while reading the KYC | Oracle error in a detail query | released `W -> N` (only while `REQUEST` is empty) | recovered by the next pass |
+| **data** | the KYC detail rows do not exist | `E`, `RESPONSE = {"error": "<code>"}` | no |
+| **uncertain delivery** | the submission step threw, REIS may have been called | `E`, `RESPONSE = {"error": "<code>", "delivery": "UNCERTAIN"}` | never automatically: needs reconciliation |
+| **recording** | REIS answered but `S` / `E` could not be written | stays in progress, reported as stuck after 15 min | never: a resend could duplicate |
+
+A technical failure means the database or the code failed, not the KYC, and nothing was sent. If releasing or marking
+fails too the failure is logged (`action` `release_failed` / `mark_error_failed`) and the pass continues.
+
+**Circuit breaker.** Three technical failures in a row stop the pass and open the breaker: the next passes do nothing
+(`flexcube.sync.circuitOpen`) for 5 minutes, doubling up to 60 minutes while the probe keeps failing. A KYC processed
+without a technical failure closes it. So a systemic fault touches three rows, not the whole batch.
+
+**Restart safety.** A crash after the INSERT leaves `N` (recovered once). A crash after the claim leaves `W`: it is
+never resent, only reported. Insert and claim are conditional, so two instances never send the same KYC.
+
 ## Recovery of stuck rows
 
 At the start of every pass:
 
-- **Rows left at `N`** by an earlier failed pass are processed first through the same claim -> load ->
-  submit path (no second INSERT). Only our own rows qualify: `MSGID` in UUID format, `REQ_DATE IS NULL`,
-  `REQUEST IS NULL`, and `KYC_REF_NO` / `SEQ_NO` matching an open KYC in `STTM_KYC_MASTER` since the
-  cut-off. A row with any other `MSGID` (for example Finexta's `TEST123`) is never touched.
-- **Rows stuck in the in-progress status** for more than 15 minutes (our own `MSGID`) are only logged
-  (`flexcube.sync.stuckInProgress`, `kycRefNo`, `seqNo`, once per process and row). They are never resent
-  automatically: the submission may already have reached REIS.
+- **Rows left at `N`** by an earlier failed pass are processed first through the same claim -> load -> submit path (no
+  second INSERT). Only our own rows qualify: `MSGID` in UUID format, `REQ_DATE IS NULL`, `REQUEST IS NULL`, and
+  `KYC_REF_NO` / `SEQ_NO` matching an open KYC in `STTM_KYC_MASTER` since the cut-off. A row with any other `MSGID`
+  (for example Finexta's `TEST123`) is never touched.
+- **Rows stuck in the in-progress status** for more than 15 minutes (our own `MSGID`) are only reported
+  (`flexcube.sync.stuckInProgress`, counts only). They are never resent: the submission may already have reached REIS.
 
-## Errors never stop the pass
+### Rows closed as E by the ORA-01745 incident (reconciliation, never automatic)
 
-Any error after the pending query is handled for that KYC only: it is logged
-(`flexcube.sync.kycFailed`: `kycRefNo`, `seqNo`, step `insert | claim | load | submit | complete`, and the
-Oracle code such as `ORA-02290`, never the message, SQL, binds or customer data), the staging row is
-marked `E` (`RETRY_COUNT + 1`, `RES_DATE`, `RESPONSE = {"error": "<code>"}`) when possible, and the next
-KYC is processed. If marking `E` fails too (`flexcube.sync.markErrorFailed`) the pass still continues.
-Only an error in the pending query itself fails the whole pass (`flexcube.sync.failed`).
+The first version of the fix turned 58 untouched rows into `E` (`RESPONSE = {"error":"ORA-01745"}`, no `REQUEST`, no
+`REQ_DATE`). `npm run reconcile:staging` restores them **only when it can prove nothing was ever sent**: ours (UUID
+`MSGID`), `E`, `RETRY_COUNT = 1`, no request, no `REQ_DATE`, no `REIS_FINAL_STATUS`, `RESPONSE` exactly the marker
+of an allowed Oracle code, the KYC still open at the same `MOD_NO` since the cut-off, **and no case for that KYC in the
+integration layer's own database** (the workflow never ran, so REIS was never called by us).
+
+- **Dry run is the default**: only SELECTs on FLEXCUBE and on the local database (opened read-only); prints counts.
+- `--apply` additionally needs `--backup-file <path>` (written first, mode 600, must not exist, keep it out of the
+  repository) and `KYC_RECONCILE_CONFIRM=RESTORE_NEVER_SENT_ROWS`. Each row is restored with one conditional `UPDATE E -> N`
+  that re-checks every condition; a row that changed meanwhile is left alone. It never enables polling and never calls REIS.
+- After a restore the service sends the rows by itself on its next pass, so enable polling only afterwards and on purpose.
+
+## UAT check diagnostics (`npm run check:uat1`, read-only)
+
+Besides the connection, tables and columns, the report (console and `uat1-check-report.json`, no customer data) shows,
+all with SELECT only:
+
+- the CHECK constraints (`ALL_CONSTRAINTS`, type `C`) and the triggers (`ALL_TRIGGERS`) of the staging table: where to look
+  when a claim (`N -> W`) fails;
+- the rows per `PROCESS_STATUS`, split into ours (UUID `MSGID`) and others (e.g. Finexta test rows);
+- our rows against the current KYC versions (kind x state: matches the current `MOD_NO`, `MOD_NO` changed, not open, before
+  the cut-off, no master): how many the service recovers by itself, how many `E` rows were never sent (and their technical
+  marker), how many need a manual look;
+- whether the configured key-person type column exists and which columns of `STTM_KYC_CORP_KEYPERSONS` have TYPE in their
+  name (candidates to ask Finexta about; nothing is guessed);
+- the pending KYCs with the current `FLEXCUBE_SYNC_START_DATE` and the latest `MAKER_DT_STAMP` per branch (first 3
+  characters of `KYC_REF_NO`), to choose the cut-off on UAT.
+
+## Logs (no customer data)
+
+Every pass has a `runId` (random UUID). Events: `flexcube.sync.run` (`runId`, `durationMs`, `found`, `sent`, `failed`,
+`skipped`, `technicalFailures`, `recovered`, `lastSuccessfulRunAt`), `flexcube.sync.kycFailed` (`runId`, `item`, `step`,
+`kind`, `action`, Oracle `error` code), `flexcube.sync.failed` (`runId`, `phase`, `durationMs`, `error`),
+`flexcube.sync.circuitOpened` / `circuitOpen`, `flexcube.sync.stuckInProgress`, `flexcube.sync.corporateDisabled`.
+Logs never contain a KYC reference, a name, a payload, an error message, SQL or a bind value.

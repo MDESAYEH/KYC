@@ -16,6 +16,7 @@ export type StagingRow = {
   RETRY_COUNT: number;
   REQ_DATE?: string;
   RES_DATE?: string;
+  REIS_FINAL_STATUS?: string | null;
   /** Test-only: minutes since the row was claimed (the fake has no clock). */
   AGE_MIN?: number;
 };
@@ -90,6 +91,24 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
       return { rowsAffected: failed.length };
     }
     const rows = find().filter((r) => r.PROCESS_STATUS === b.sourceStatus);
+    if (sql.includes('RESPONSE = NULL')) {
+      // reconciliation: E -> N only for a row proven closed by a technical failure before any send
+      const restored = rows.filter(
+        (r) =>
+          r.REQUEST === null &&
+          r.REQ_DATE === undefined &&
+          (r.REIS_FINAL_STATUS ?? null) === null &&
+          r.RETRY_COUNT === 1 &&
+          r.RESPONSE === b.expectedResponse,
+      );
+      for (const r of restored) {
+        r.PROCESS_STATUS = String(b.targetStatus);
+        r.RESPONSE = null;
+        r.RETRY_COUNT = 0;
+        delete r.RES_DATE;
+      }
+      return { rowsAffected: restored.length };
+    }
     if (sql.includes('REQ_DATE = NULL')) {
       // release: W -> N, only while nothing was stored
       const released = rows.filter((r) => r.REQUEST === null);
@@ -120,6 +139,35 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
     if (!/^\s*SELECT/i.test(sql)) throw new Error('only SELECT is allowed in query()');
     const hooked = this.queryHook?.(sql, b);
     if (hooked) throw hooked;
+    if (sql.includes('IN (:expectedResponse0')) {
+      const expected = Object.entries(b)
+        .filter(([k]) => k.startsWith('expectedResponse'))
+        .map(([, v]) => v);
+      const uuid = new RegExp(OWN_MSGID_PATTERN, 'i');
+      return this.staging
+        .filter(
+          (s) =>
+            s.PROCESS_STATUS === b.errorStatus &&
+            s.REQUEST === null &&
+            s.REQ_DATE === undefined &&
+            (s.REIS_FINAL_STATUS ?? null) === null &&
+            s.RETRY_COUNT === 1 &&
+            uuid.test(s.MSGID) &&
+            expected.includes(s.RESPONSE),
+        )
+        .filter((s) =>
+          this.master.some(
+            (m) =>
+              m.KYC_REF_NO === s.KYC_REF_NO &&
+              m.MOD_NO === s.SEQ_NO &&
+              (m.RECORD_STAT ?? 'O') === 'O' &&
+              ['R', 'C'].includes(m.KYC_CUST_TYPE) &&
+              (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= String(b.since),
+          ),
+        )
+        .slice(0, Number(b.maxRows))
+        .map((s) => ({ KYC_REF_NO: s.KYC_REF_NO, SEQ_NO: s.SEQ_NO }));
+    }
     if (sql.includes('FROM ALL_TAB_COLUMNS')) return [{ N: this.keypersonColumnPresent ? 1 : 0 }];
     if (sql.includes('s.REQ_DATE IS NULL')) {
       // recovery of our own rows left at N: UUID MSGID, never claimed, open KYC since the cut-off

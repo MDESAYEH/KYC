@@ -338,6 +338,24 @@ describe('FlexcubeSyncService under failure', () => {
       });
     });
 
+    it('a REIS timeout (delivery uncertain) closes the row as E and is never resent by the poller', async () => {
+      addKyc('K1');
+      workflow.submit.mockResolvedValue({
+        outcome: 'FAILED',
+        stage: 'ONBOARDING',
+        code: 'DELIVERY_UNCERTAIN',
+      });
+      const sync = service();
+      expect(await sync.runOnce()).toMatchObject({ failed: 1, sent: 0 });
+      expect(row('K1')).toMatchObject({
+        PROCESS_STATUS: 'E',
+        RESPONSE: JSON.stringify({ error: 'DELIVERY_UNCERTAIN', stage: 'ONBOARDING' }),
+      });
+      await sync.runOnce();
+      await sync.runOnce();
+      expect(workflow.submit).toHaveBeenCalledTimes(1);
+    });
+
     it('classification table', () => {
       const ora = new Error('ORA-00942: x');
       expect(classifyFailure('insert', new Error('x'))).toBe('technical');

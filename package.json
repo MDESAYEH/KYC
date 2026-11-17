@@ -19,7 +19,8 @@
     "test": "jest",
     "test:cov": "jest --coverage",
     "mappings:seed": "nest build && node dist/mapping/seed/run-seed.js",
-    "check:uat1": "nest build && node dist/tools/check-flexcube-uat.js"
+    "check:uat1": "nest build && node dist/tools/check-flexcube-uat.js",
+    "reconcile:staging": "nest build && node dist/tools/reconcile-staging.js"
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",

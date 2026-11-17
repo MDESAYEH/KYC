@@ -21,6 +21,15 @@ export function assertSafeStatusCode(value: string): string {
   return value;
 }
 
+/** Only Oracle / driver codes are technical failures: ORA-01745, NJS-503, DPI-1080 ... */
+const TECHNICAL_CODE = /^(ORA|NJS|DPI)-\d{3,5}$/;
+
+/** The exact RESPONSE the service stores when a failure was technical: {"error":"<code>"}. */
+export function technicalErrorResponse(code: string): string {
+  if (!TECHNICAL_CODE.test(code)) throw new Error('Not an Oracle / driver error code');
+  return JSON.stringify({ error: code });
+}
+
 export interface StagingKey {
   kycRefNo: string;
   seqNo: number;
@@ -146,6 +155,67 @@ export class StagingSubmissionRepository {
       { inProgressStatus: this.inProgress, ageMinutes: minutes, maxRows },
     );
     return rows.map((r) => ({ kycRefNo: String(r.KYC_REF_NO), seqNo: Number(r.SEQ_NO) }));
+  }
+
+  // ---- reconciliation of rows closed as E by the ORA-01745 incident (never sent) -----------------
+
+  /**
+   * Our rows closed as E whose claim never succeeded, so nothing was ever sent: no REQUEST, no
+   * REQ_DATE, no REIS_FINAL_STATUS, RETRY_COUNT = 1 and RESPONSE exactly {"error":"<code>"} for one
+   * of the given Oracle codes, for a KYC that is still open at the same MOD_NO since the cut-off.
+   * Read-only. Used by the reconciliation tool (dry run by default).
+   */
+  async findNeverSentTechnicalErrors(
+    since: string,
+    errorCodes: string[],
+    maxRows: number,
+  ): Promise<StagingKey[]> {
+    const binds: Record<string, string | number> = {
+      errorStatus: StagingProcessStatus.ERROR,
+      since,
+      maxRows,
+    };
+    const placeholders = errorCodes.map((code, i) => {
+      binds[`expectedResponse${i}`] = technicalErrorResponse(code);
+      return `:expectedResponse${i}`;
+    });
+    const rows = await this.db.query(
+      `SELECT s.KYC_REF_NO, s.SEQ_NO FROM ${this.table} s ` +
+        `JOIN STTM_KYC_MASTER m ON m.KYC_REF_NO = s.KYC_REF_NO AND m.MOD_NO = s.SEQ_NO ` +
+        `WHERE s.PROCESS_STATUS = :errorStatus AND s.REQUEST IS NULL AND s.REQ_DATE IS NULL ` +
+        `AND s.REIS_FINAL_STATUS IS NULL AND s.RETRY_COUNT = 1 ` +
+        `AND REGEXP_LIKE(s.MSGID, '${OWN_MSGID_PATTERN}', 'i') ` +
+        `AND TO_CHAR(SUBSTR(s.RESPONSE, 1, 200)) IN (${placeholders.join(', ')}) ` +
+        `AND m.RECORD_STAT = 'O' AND m.KYC_CUST_TYPE IN ('R', 'C') ` +
+        `AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS') ` +
+        `ORDER BY s.KYC_REF_NO FETCH FIRST :maxRows ROWS ONLY`,
+      binds,
+    );
+    return rows.map((r) => ({ kycRefNo: String(r.KYC_REF_NO), seqNo: Number(r.SEQ_NO) }));
+  }
+
+  /**
+   * E -> N for ONE row proven to have been closed only by a technical failure before anything was
+   * sent (same conditions as findNeverSentTechnicalErrors, re-checked in the WHERE clause so a row
+   * that changed in the meantime is left alone). RESPONSE, RETRY_COUNT and RES_DATE are reset.
+   * Called ONLY by the reconciliation tool after the local proof and a backup.
+   */
+  async restoreNeverSent(key: StagingKey, errorCode: string): Promise<boolean> {
+    const { rowsAffected } = await this.db.execute(
+      `UPDATE ${this.table} SET PROCESS_STATUS = :targetStatus, RESPONSE = NULL, ` +
+        `RETRY_COUNT = 0, RES_DATE = NULL ` +
+        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :sourceStatus ` +
+        `AND REQUEST IS NULL AND REQ_DATE IS NULL AND REIS_FINAL_STATUS IS NULL ` +
+        `AND RETRY_COUNT = 1 AND TO_CHAR(SUBSTR(RESPONSE, 1, 200)) = :expectedResponse`,
+      {
+        targetStatus: StagingProcessStatus.NEW,
+        sourceStatus: StagingProcessStatus.ERROR,
+        kycRefNo: key.kycRefNo,
+        seqNo: key.seqNo,
+        expectedResponse: technicalErrorResponse(errorCode),
+      },
+    );
+    return rowsAffected === 1;
   }
 
   /** W -> S or E, storing the REIS request / response JSON when known. */
