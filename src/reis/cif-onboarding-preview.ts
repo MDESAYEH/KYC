@@ -16,6 +16,7 @@ export class CifOnboardingPreview {
     const baseline = await this.fields.transform(customer);
     if (baseline.relations.some((relation) => relation.systemId === systemId)) {
       throw new InvalidFieldValueError('relation.systemId', 'collides with the primary CIF');
+    }
     return {
       submissionAllowed: false as const,
       sourceVerified: false as const,
