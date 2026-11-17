@@ -64,6 +64,7 @@ async function main(): Promise<void> {
       },
       undefined,
       config.flexcube.syncStartDate,
+      config.flexcube.keypersonTypeColumn,
     );
   } finally {
     if (db instanceof OracleSqlExecutor) await db.onModuleDestroy();

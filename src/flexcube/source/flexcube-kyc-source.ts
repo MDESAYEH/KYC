@@ -4,10 +4,16 @@ import {
   FlexcubeIndividualDto,
   FlexcubeRelatedPartyDto,
 } from '../dto/flexcube-customer.request';
-import { assertSafeTableName, IFlexcubeSqlExecutor, SqlRow } from '../staging/flexcube-staging';
+import {
+  assertSafeColumnName,
+  assertSafeTableName,
+  DEFAULT_KEYPERSON_TYPE_COLUMN,
+  IFlexcubeSqlExecutor,
+  SqlRow,
+} from '../staging/flexcube-staging';
 import {
   CORPORATE_COUNTRIES_SQL,
-  CORPORATE_KEYPERSONS_SQL,
+  corporateKeypersonsSql,
   CORPORATE_KYC_SQL,
   CORPORATE_PRODUCTS_SQL,
   INDIVIDUAL_KYC_SQL,
@@ -86,6 +92,7 @@ const text = (value: unknown): string | undefined => {
 export class FlexcubeKycSource {
   private readonly pendingSql: string;
   private readonly stuckNewSql: string;
+  private readonly keypersonsSql: string;
 
   private readonly since: string;
 
@@ -94,6 +101,8 @@ export class FlexcubeKycSource {
     private readonly db: IFlexcubeSqlExecutor,
     stagingTable: string,
     syncStartDate: string,
+    /** Column holding the key-person type (FLEXCUBE_KEYPERSON_TYPE_COLUMN). */
+    keypersonTypeColumn: string = DEFAULT_KEYPERSON_TYPE_COLUMN,
   ) {
     const since = normalizeSyncStartDate(syncStartDate);
     if (since === undefined) {
@@ -102,6 +111,7 @@ export class FlexcubeKycSource {
     this.since = since;
     this.pendingSql = pendingKycSql(assertSafeTableName(stagingTable));
     this.stuckNewSql = stuckNewKycSql(stagingTable);
+    this.keypersonsSql = corporateKeypersonsSql(assertSafeColumnName(keypersonTypeColumn));
   }
 
   async findPending(maxRows: number): Promise<PendingKyc[]> {
@@ -168,7 +178,7 @@ export class FlexcubeKycSource {
 
   /** Key persons as raw values; blank text -> undefined, dates -> YYYY-MM-DD. No validation here. */
   private async relatedParties(kycRefNo: string): Promise<FlexcubeRelatedPartyDto[]> {
-    const rows = await this.db.query(CORPORATE_KEYPERSONS_SQL, { kycRefNo });
+    const rows = await this.db.query(this.keypersonsSql, { kycRefNo });
     return rows.map(
       (k) =>
         ({

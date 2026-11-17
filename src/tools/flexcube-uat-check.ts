@@ -2,7 +2,12 @@ import { CanonicalToReisTransformer } from '../reis/canonical-to-reis.transforme
 import { oraCode, oracleErrorCode } from '../flexcube/oracle-error';
 import { FlexcubeKycSource, normalizeSyncStartDate } from '../flexcube/source/flexcube-kyc-source';
 import { FlexcubeToCanonicalMapper } from '../flexcube/flexcube-to-canonical.mapper';
-import { assertSafeTableName, IFlexcubeSqlExecutor } from '../flexcube/staging/flexcube-staging';
+import {
+  assertSafeColumnName,
+  assertSafeTableName,
+  DEFAULT_KEYPERSON_TYPE_COLUMN,
+  IFlexcubeSqlExecutor,
+} from '../flexcube/staging/flexcube-staging';
 
 /**
  * READ-ONLY diagnostic of the FLEXCUBE UAT database for the integration layer:
@@ -90,6 +95,18 @@ export const EXPECTED_COLUMNS: Record<string, string[]> = {
   ],
 };
 
+/** EXPECTED_COLUMNS with the configured key-person type column (FLEXCUBE_KEYPERSON_TYPE_COLUMN). */
+export function expectedColumns(
+  keypersonTypeColumn: string = DEFAULT_KEYPERSON_TYPE_COLUMN,
+): Record<string, string[]> {
+  return {
+    ...EXPECTED_COLUMNS,
+    STTM_KYC_CORP_KEYPERSONS: EXPECTED_COLUMNS.STTM_KYC_CORP_KEYPERSONS.map((c) =>
+      c === DEFAULT_KEYPERSON_TYPE_COLUMN ? keypersonTypeColumn : c,
+    ),
+  };
+}
+
 export const STAGING_COLUMNS = [
   'KYC_REF_NO',
   'SEQ_NO',
@@ -153,8 +170,11 @@ export async function runUatCheck(
   dryRunLimit = 5,
   /** Raw FLEXCUBE_SYNC_START_DATE (cut-off of the pending query). */
   syncStartDate?: string,
+  /** Column holding the key-person type (FLEXCUBE_KEYPERSON_TYPE_COLUMN). */
+  keypersonTypeColumn: string = DEFAULT_KEYPERSON_TYPE_COLUMN,
 ): Promise<UatCheckReport> {
   const staging = assertSafeTableName(stagingTable);
+  const expected = expectedColumns(assertSafeColumnName(keypersonTypeColumn));
   const stagingName = staging.split('.').pop()!.toUpperCase();
   const report: UatCheckReport = { connected: false, tables: [], similarObjects: [], dryRun: [] };
 
@@ -172,7 +192,7 @@ export async function runUatCheck(
   }
 
   // Columns visible to the user (any owner: the tables may be reached through synonyms).
-  const names = [...Object.keys(EXPECTED_COLUMNS), stagingName];
+  const names = [...Object.keys(expected), stagingName];
   const binds = Object.fromEntries(names.map((n, i) => [`t${i}`, n]));
   const colRows = await db
     .query(
@@ -207,8 +227,8 @@ export async function runUatCheck(
     result.missingColumns = seen ? expected.filter((c) => !seen.has(c)) : expected;
     report.tables.push(result);
   };
-  for (const [table, expected] of Object.entries(EXPECTED_COLUMNS)) {
-    await check(table, table, expected);
+  for (const [table, cols] of Object.entries(expected)) {
+    await check(table, table, cols);
   }
   await check(stagingName, staging, STAGING_COLUMNS);
 
@@ -262,7 +282,7 @@ export async function runUatCheck(
         name: 'FLEXCUBE_SYNC_START_DATE_MISSING_OR_INVALID',
       });
     }
-    const source = new FlexcubeKycSource(db, staging, syncStartDate as string);
+    const source = new FlexcubeKycSource(db, staging, syncStartDate as string, keypersonTypeColumn);
     const pending = await source.findPending(200);
     report.pending = {
       total: pending.length,

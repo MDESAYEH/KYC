@@ -9,7 +9,13 @@ import { SingleSelectionSourceOfIncomeStrategy } from '../mapping/single-source-
 import { TypeOrmReferenceMappingRepository } from '../persistence/typeorm-reference-mapping.repository';
 import { CanonicalToReisTransformer } from '../reis/canonical-to-reis.transformer';
 import { ReisConfig } from '../reis/reis.config';
-import { EXPECTED_COLUMNS, oraCode, runUatCheck, STAGING_COLUMNS } from './flexcube-uat-check';
+import {
+  EXPECTED_COLUMNS,
+  expectedColumns,
+  oraCode,
+  runUatCheck,
+  STAGING_COLUMNS,
+} from './flexcube-uat-check';
 
 const STAGING = 'STTM_KYC_REIS_PAYLOAD_CUSTOM';
 
@@ -121,6 +127,26 @@ describe('UAT1 read-only check', () => {
       error: 'FLEXCUBE_SYNC_START_DATE_MISSING_OR_INVALID',
     });
     expect(db.statements.some((s) => s.includes('FROM STTM_KYC_MASTER m'))).toBe(false);
+  });
+
+  it('expects the configured key-person type column instead of KYC_KEYPERSON_TYPE', async () => {
+    expect(expectedColumns().STTM_KYC_CORP_KEYPERSONS).toContain('KYC_KEYPERSON_TYPE');
+    const cols = expectedColumns('OWNERSHIP_TYPE').STTM_KYC_CORP_KEYPERSONS;
+    expect(cols).toContain('OWNERSHIP_TYPE');
+    expect(cols).not.toContain('KYC_KEYPERSON_TYPE');
+    // the fake lists the default columns: with the default there is nothing missing, with
+    // OWNERSHIP_TYPE the column is reported as missing
+    const ok = await runUatCheck(db, STAGING, pipeline, 5, SINCE);
+    expect(ok.tables.find((t) => t.table === 'STTM_KYC_CORP_KEYPERSONS')?.missingColumns).toEqual(
+      [],
+    );
+    const other = await runUatCheck(db, STAGING, pipeline, 5, SINCE, 'OWNERSHIP_TYPE');
+    expect(
+      other.tables.find((t) => t.table === 'STTM_KYC_CORP_KEYPERSONS')?.missingColumns,
+    ).toEqual(['OWNERSHIP_TYPE']);
+    await expect(runUatCheck(db, STAGING, pipeline, 5, SINCE, 'A;B')).rejects.toThrow(
+      'FLEXCUBE_KEYPERSON_TYPE_COLUMN',
+    );
   });
 
   it('expects the key-person tables and their columns', () => {

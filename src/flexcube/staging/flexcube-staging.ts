@@ -55,6 +55,16 @@ export function isUniqueViolation(error: unknown): boolean {
  * (e.g. Finexta's test row) are never touched. Used in REGEXP_LIKE(MSGID, pattern, 'i').
  */
 export const OWN_MSGID_PATTERN = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+/** Default column holding the key-person type (I / C); Finexta may name it differently on UAT. */
+export const DEFAULT_KEYPERSON_TYPE_COLUMN = 'KYC_KEYPERSON_TYPE';
+
+/** Only a plain Oracle column identifier may be used as the key-person type column. */
+export function assertSafeColumnName(name: string): string {
+  if (!/^[A-Za-z][A-Za-z0-9_$#]{0,127}$/.test(name)) {
+    throw new Error('FLEXCUBE_KEYPERSON_TYPE_COLUMN is not a valid Oracle column name');
+  }
+  return name;
+}
 export const FLEXCUBE_SQL_EXECUTOR = Symbol('IFlexcubeSqlExecutor');
 
 /** Only plain Oracle identifiers (optionally schema-qualified) may be used as the table name. */

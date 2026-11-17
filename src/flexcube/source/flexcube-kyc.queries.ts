@@ -34,6 +34,13 @@
  */
 import { OWN_MSGID_PATTERN } from '../staging/flexcube-staging';
 
+/*
+ * The key-person type column (I / C) is configurable (FLEXCUBE_KEYPERSON_TYPE_COLUMN, default
+ * KYC_KEYPERSON_TYPE): UAT1 has no KYC_KEYPERSON_TYPE (OWNERSHIP_TYPE exists) and Finexta has not
+ * said which column holds it. The value is validated as a plain identifier and aliased back to
+ * KYC_KEYPERSON_TYPE, so only the .env changes when Finexta answers.
+ */
+
 export const pendingKycSql = (stagingTable: string): string =>
   `SELECT m.KYC_REF_NO, m.KYC_CUST_TYPE, m.MOD_NO
      FROM STTM_KYC_MASTER m
@@ -96,8 +103,8 @@ export const CORPORATE_PRODUCTS_SQL = `
  * Key persons of a corporate KYC. LEFT JOIN: a missing CUSTOM row comes back as
  * CUSTOM_KYC_REF_NO = NULL and is reported as a validation error, never silently dropped.
  */
-export const CORPORATE_KEYPERSONS_SQL = `
-  SELECT k.KYC_ID, k.NAME, k.KYC_KEYPERSON_TYPE, k.RELATIONSHIP, k.DATE_OF_BIRTH,
+export const corporateKeypersonsSql = (typeColumn: string): string => `
+  SELECT k.KYC_ID, k.NAME, k.${typeColumn} AS KYC_KEYPERSON_TYPE, k.RELATIONSHIP, k.DATE_OF_BIRTH,
          k.NATIONALITY, k.ADDRESS_COUNTRY, k.PLACE_OF_BIRTH, k.TIN,
          cu.KYC_REF_NO AS CUSTOM_KYC_REF_NO, cu.FIRST_NAME, cu.LAST_NAME, cu.PASSPORT_NUMBER,
          cu.PASSPORT_ISSUE_DATE, cu.PASSPORT_EXPIRY_DATE, cu.PLACE_OF_ISSUE, cu.NATIONAL_ID

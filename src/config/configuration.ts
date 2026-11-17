@@ -46,6 +46,8 @@ export interface AppConfig {
     syncStartDate: string | undefined;
     /** Staging PROCESS_STATUS of a claimed row (FLEXCUBE_STAGING_STATUS_IN_PROGRESS, default W). */
     stagingStatusInProgress: string;
+    /** Column of STTM_KYC_CORP_KEYPERSONS holding the party type I / C (FLEXCUBE_KEYPERSON_TYPE_COLUMN). */
+    keypersonTypeColumn: string;
   };
   /** Production DB is TBD. sqlite (local dev/test only) is the only supported type for now. */
   database: { type: string; sqlitePath: string | undefined };
@@ -91,6 +93,7 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
       pollBatchSize: clamp(num(env.FLEXCUBE_POLL_BATCH_SIZE) ?? 20, 1, 200),
       syncStartDate: str(env.FLEXCUBE_SYNC_START_DATE),
       stagingStatusInProgress: str(env.FLEXCUBE_STAGING_STATUS_IN_PROGRESS) ?? 'W',
+      keypersonTypeColumn: str(env.FLEXCUBE_KEYPERSON_TYPE_COLUMN) ?? 'KYC_KEYPERSON_TYPE',
     },
     database: {
       type: env.DB_TYPE ?? 'sqlite',

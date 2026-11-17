@@ -139,6 +139,7 @@ describe('FLEXCUBE updater selection', () => {
     pollBatchSize: 20,
     syncStartDate: undefined,
     stagingStatusInProgress: 'W',
+    keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
     ...over,
   });
   const log = () => ({ warn: jest.fn() });

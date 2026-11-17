@@ -423,6 +423,31 @@ describe('FlexcubeKycSource (provisional STTM queries)', () => {
       expect(db.allSql.every((c) => /^\s*SELECT/i.test(c.sql))).toBe(true);
     });
 
+    it('reads the key-person type from the configured column, aliased back to KYC_KEYPERSON_TYPE', async () => {
+      const custom = new FlexcubeKycSource(db, 'STAGE', SINCE, 'OWNERSHIP_TYPE');
+      db.keyPersons.set('K2', [KEY_I]);
+      const r = await custom.load({ kycRefNo: 'K2', seqNo: 1, customerType: 'CORPORATE' });
+      const sql = db.allSql.find((c) => c.sql.includes('STTM_KYC_CORP_KEYPERSONS'))!.sql;
+      expect(sql).toContain('k.OWNERSHIP_TYPE AS KYC_KEYPERSON_TYPE');
+      expect(sql).not.toContain('k.KYC_KEYPERSON_TYPE');
+      expect(r.corporate?.RELATED_PARTIES?.[0]).toMatchObject({ KYC_KEYPERSON_TYPE: 'I' });
+    });
+
+    it('defaults to the KYC_KEYPERSON_TYPE column', async () => {
+      db.keyPersons.set('K2', [KEY_I]);
+      await load();
+      const sql = db.allSql.find((c) => c.sql.includes('STTM_KYC_CORP_KEYPERSONS'))!.sql;
+      expect(sql).toContain('k.KYC_KEYPERSON_TYPE AS KYC_KEYPERSON_TYPE');
+    });
+
+    it('rejects an unsafe key-person type column name', () => {
+      for (const bad of ['', 'A;DROP TABLE X', 'A B', '1X', 'X"', "X'", 'X--', 'K.X']) {
+        expect(() => new FlexcubeKycSource(db, 'STAGE', SINCE, bad)).toThrow(
+          /FLEXCUBE_KEYPERSON_TYPE_COLUMN/,
+        );
+      }
+    });
+
     it('has no related parties when the company has no key persons', async () => {
       expect((await load()).corporate?.RELATED_PARTIES).toEqual([]);
     });
@@ -885,6 +910,7 @@ describe('FLEXCUBE polling configuration and scheduler', () => {
     pollBatchSize: 20,
     syncStartDate: '2026-11-16' as string | undefined,
     stagingStatusInProgress: 'W',
+    keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
     ...over,
   });
   const wf = {} as IKycWorkflow;
@@ -928,6 +954,30 @@ describe('FLEXCUBE polling configuration and scheduler', () => {
       expect(() => new StagingSubmissionRepository(new FakeFlexcubeDb(), 'STAGE', bad)).toThrow(
         /FLEXCUBE_STAGING_STATUS_IN_PROGRESS/,
       );
+    }
+  });
+
+  it('the key-person type column defaults to KYC_KEYPERSON_TYPE and is validated at startup', () => {
+    expect(loadConfiguration({}).flexcube.keypersonTypeColumn).toBe('KYC_KEYPERSON_TYPE');
+    expect(
+      loadConfiguration({ FLEXCUBE_KEYPERSON_TYPE_COLUMN: 'OWNERSHIP_TYPE' }).flexcube
+        .keypersonTypeColumn,
+    ).toBe('OWNERSHIP_TYPE');
+    expect(
+      createFlexcubeSync(
+        new FakeFlexcubeDb(),
+        wf,
+        cfg({ pollEnabled: true, keypersonTypeColumn: 'OWNERSHIP_TYPE' }),
+      ),
+    ).toBeInstanceOf(FlexcubeSyncService);
+    for (const bad of ['A;B', 'a b', '']) {
+      expect(() =>
+        createFlexcubeSync(
+          new FakeFlexcubeDb(),
+          wf,
+          cfg({ pollEnabled: true, keypersonTypeColumn: bad }),
+        ),
+      ).toThrow(FlexcubeSyncConfigError);
     }
   });
 

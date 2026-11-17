@@ -67,6 +67,12 @@ tables and INSERT / UPDATE (no DELETE) on the staging table.
 claimed row, so it can follow Finexta's CHECK constraint on the staging table without a code change.
 The claim stays conditional (only from `N`), so two instances never send the same KYC.
 
+`FLEXCUBE_KEYPERSON_TYPE_COLUMN` (default `KYC_KEYPERSON_TYPE`, a plain Oracle identifier) names the column of
+`STTM_KYC_CORP_KEYPERSONS` that holds the party type `I` / `C`. UAT1 has no `KYC_KEYPERSON_TYPE` column
+(`OWNERSHIP_TYPE` exists) and Finexta has not said which column to use; when they answer only `.env` changes.
+The SELECT aliases it back to `KYC_KEYPERSON_TYPE`, and `npm run check:uat1` checks the configured column.
+While the column is wrong, a corporate KYC ends as `E` with the `ORA-00904` code and individuals keep flowing.
+
 ## Recovery of stuck rows
 
 At the start of every pass:

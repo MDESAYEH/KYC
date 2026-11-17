@@ -3,7 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../config/configuration';
 import { FlexcubeModule } from '../flexcube/flexcube.module';
 import { FlexcubeKycSource, normalizeSyncStartDate } from '../flexcube/source/flexcube-kyc-source';
-import { FLEXCUBE_SQL_EXECUTOR, IFlexcubeSqlExecutor } from '../flexcube/staging/flexcube-staging';
+import {
+  assertSafeColumnName,
+  FLEXCUBE_SQL_EXECUTOR,
+  IFlexcubeSqlExecutor,
+} from '../flexcube/staging/flexcube-staging';
 import { StagingSubmissionRepository } from '../flexcube/staging/staging-submission.repository';
 import { IKycWorkflow, KYC_WORKFLOW } from '../kyc/kyc.interfaces';
 import { KycModule } from '../kyc/kyc.module';
@@ -41,8 +45,20 @@ export function createFlexcubeSync(
       'FLEXCUBE_STAGING_STATUS_IN_PROGRESS must be one uppercase letter (default W)',
     );
   }
+  try {
+    assertSafeColumnName(flexcube.keypersonTypeColumn);
+  } catch {
+    throw new FlexcubeSyncConfigError(
+      'FLEXCUBE_KEYPERSON_TYPE_COLUMN is not a valid Oracle column name (default KYC_KEYPERSON_TYPE)',
+    );
+  }
   return new FlexcubeSyncService(
-    new FlexcubeKycSource(executor, flexcube.stagingTable, flexcube.syncStartDate as string),
+    new FlexcubeKycSource(
+      executor,
+      flexcube.stagingTable,
+      flexcube.syncStartDate as string,
+      flexcube.keypersonTypeColumn,
+    ),
     new StagingSubmissionRepository(
       executor,
       flexcube.stagingTable,
