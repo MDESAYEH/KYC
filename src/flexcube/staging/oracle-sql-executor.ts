@@ -24,6 +24,34 @@ export function assertSafeSchema(schema: string): string {
 }
 
 /**
+ * Statements that may be handed to Oracle's parser without any risk. getStatementInfo() only
+ * parses SELECT / WITH / INSERT / UPDATE (no row is read or changed), but Oracle EXECUTES DDL
+ * during that call, and PL/SQL, MERGE or DELETE have no place in this integration: refused here.
+ */
+const PARSE_ONLY_ALLOWED = /^\s*(SELECT|WITH|INSERT|UPDATE)\b/i;
+
+export class ParseOnlyRefusedError extends Error {
+  constructor() {
+    super(
+      'Only SELECT, WITH, INSERT or UPDATE statements can be parsed (no DDL / PL/SQL / DELETE)',
+    );
+    this.name = 'ParseOnlyRefusedError';
+  }
+}
+
+export interface StatementInfo {
+  /** Bind names exactly as Oracle's parser sees them (upper-case). */
+  bindNames: string[];
+  /** oracledb.STMT_TYPE_* code. */
+  statementType: number;
+}
+
+/** Guard for describe(): exported for unit tests. */
+export function assertParseOnly(sql: string): void {
+  if (!PARSE_ONLY_ALLOWED.test(sql) || /;\s*\S/.test(sql)) throw new ParseOnlyRefusedError();
+}
+
+/**
  * node-oracledb (Thin mode: no Oracle Client install needed) with a small lazy pool.
  * Every statement is committed on its own (autoCommit). Credentials are never logged.
  */
@@ -89,6 +117,27 @@ export class OracleSqlExecutor implements IFlexcubeSqlExecutor, OnModuleDestroy 
             : undefined,
       });
       return res.rows ?? [];
+    } finally {
+      await conn.close();
+    }
+  }
+
+  /**
+   * PARSE ONLY: asks Oracle to parse the statement (connection.getStatementInfo) and returns the
+   * bind names its parser found, WITHOUT executing it: no row is read, inserted or updated, and
+   * nothing is committed. A reserved-word bind (ORA-01745), an unknown column (ORA-00904) or a
+   * missing privilege / object (ORA-00942) is raised as the Oracle error. Used by the read-only
+   * `check:oracle-sql` tool on UAT1.
+   */
+  async describe(sql: string): Promise<StatementInfo> {
+    assertParseOnly(sql);
+    const conn = await (await this.getPool()).getConnection();
+    try {
+      const info = await conn.getStatementInfo(sql);
+      return {
+        bindNames: (info.bindNames ?? []).map((n) => n.toUpperCase()),
+        statementType: info.statementType ?? -1,
+      };
     } finally {
       await conn.close();
     }

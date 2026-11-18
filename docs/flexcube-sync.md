@@ -205,3 +205,28 @@ Every pass has a `runId` (random UUID). Events: `flexcube.sync.run` (`runId`, `d
 `kind`, `action`, Oracle `error` code), `flexcube.sync.failed` (`runId`, `phase`, `durationMs`, `error`),
 `flexcube.sync.circuitOpened` / `circuitOpen`, `flexcube.sync.stuckInProgress`, `flexcube.sync.corporateDisabled`.
 Logs never contain a KYC reference, a name, a payload, an error message, SQL or a bind value.
+
+## Send guard: an uncertain delivery stops all sending
+
+A delivery is uncertain when REIS may have received the request but no result was stored: a REIS timeout / network
+error / 5xx after the call (`requestMayHaveReachedReis`), an unexpected error during the submission, a result that could
+not be written to the staging table (row left in progress), or a duplicate whose earlier delivery was uncertain. Then:
+
+- the row is closed as `E` with `"delivery":"UNCERTAIN"` in `RESPONSE` (or stays in progress), and is never resent;
+- the current pass stops and no further KYC is sent (`flexcube.sync.haltingAfterUncertainDelivery`);
+- every later pass, also after a restart, first looks for such rows of ours (and for our rows claimed more than 5 minutes
+  ago) and sends nothing while one is unresolved or the check itself fails (`flexcube.sync.sendingHalted`, counts only);
+- an operator reconciles with Vneuron (did REIS receive it?) and then lists the row in
+  `FLEXCUBE_SYNC_UNCERTAIN_ACK=KYC_REF_NO:SEQ_NO`; sending resumes for the others, never for that row.
+
+A failure known to happen before REIS (validation, missing details) does not stop the others.
+
+## Parse-only Oracle check (`npm run check:oracle-sql`)
+
+Every statement the integration can send (catalog built from the real code: polling source, staging repository,
+reconciliation and rollback, final-status updater, single-KYC trial) is handed to Oracle's parser with
+`connection.getStatementInfo()`. Nothing is executed, read, changed or committed; DDL, PL/SQL, MERGE and DELETE are refused
+before Oracle is called. For each statement it reports OK, the Oracle code (e.g. ORA-01745, ORA-00904, ORA-00942) or the
+difference between the bind names Oracle sees and the ones the code sends. This is the UAT1 evidence for the ORA-01745 fix
+without any UPDATE / ROLLBACK on the bank database. The N -> W transition and CHECK constraints are tested on an isolated
+Oracle schema only (`test/oracle-staging.sql.integration.spec.ts`, skipped unless explicitly enabled).

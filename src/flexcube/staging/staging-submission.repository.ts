@@ -50,6 +50,9 @@ export interface StagingKey {
   seqNo: number;
 }
 
+/** Marker stored in RESPONSE when REIS may have received a request whose outcome is unknown. */
+export const DELIVERY_UNCERTAIN_MARKER = '"delivery":"UNCERTAIN"';
+
 /**
  * Submission lifecycle in STTM_KYC_REIS_PAYLOAD_CUSTOM (one row per KYC_REF_NO + SEQ_NO):
  *   insertNew  -> N   (row created by the integration layer when a saved KYC is detected)
@@ -331,6 +334,29 @@ export class StagingSubmissionRepository {
       },
     );
     return rowsAffected === 1;
+  }
+
+  /**
+   * Our rows whose delivery to REIS is not known (send guard of the polling service): E rows marked
+   * {"delivery":"UNCERTAIN"} and rows claimed for more than `minutes` (a pass died after the claim,
+   * possibly after the REIS call). While any is unresolved, the sync sends nothing. Read-only.
+   */
+  async findDeliveryRisk(minutes: number, maxRows: number): Promise<StagingKey[]> {
+    const rows = await this.db.query(
+      `SELECT KYC_REF_NO, SEQ_NO FROM ${this.table} ` +
+        `WHERE REGEXP_LIKE(MSGID, '${OWN_MSGID_PATTERN}', 'i') ` +
+        `AND ((PROCESS_STATUS = :errorStatus AND INSTR(RESPONSE, :uncertainMarker) > 0) ` +
+        `OR (PROCESS_STATUS = :inProgressStatus AND REQ_DATE < SYSDATE - (:ageMinutes / 1440))) ` +
+        `ORDER BY KYC_REF_NO FETCH FIRST :maxRows ROWS ONLY`,
+      {
+        errorStatus: StagingProcessStatus.ERROR,
+        uncertainMarker: DELIVERY_UNCERTAIN_MARKER,
+        inProgressStatus: this.inProgress,
+        ageMinutes: minutes,
+        maxRows,
+      },
+    );
+    return rows.map((r) => ({ kycRefNo: String(r.KYC_REF_NO), seqNo: Number(r.SEQ_NO) }));
   }
 
   /** W -> S or E, storing the REIS request / response JSON when known. */

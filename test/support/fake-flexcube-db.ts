@@ -180,6 +180,19 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
         },
       ];
     }
+    if (sql.includes(':uncertainMarker')) {
+      const uuid = new RegExp(OWN_MSGID_PATTERN, 'i');
+      return this.staging
+        .filter(
+          (s) =>
+            uuid.test(s.MSGID) &&
+            ((s.PROCESS_STATUS === b.errorStatus &&
+              (s.RESPONSE ?? '').includes(String(b.uncertainMarker))) ||
+              (s.PROCESS_STATUS === b.inProgressStatus && (s.AGE_MIN ?? 0) > Number(b.ageMinutes))),
+        )
+        .slice(0, Number(b.maxRows))
+        .map((s) => ({ KYC_REF_NO: s.KYC_REF_NO, SEQ_NO: s.SEQ_NO }));
+    }
     if (sql.includes('FROM ALL_TAB_COLUMNS')) return [{ N: this.keypersonColumnPresent ? 1 : 0 }];
     if (sql.includes('s.REQ_DATE IS NULL')) {
       // recovery of our own rows left at N: UUID MSGID, never claimed, open KYC since the cut-off

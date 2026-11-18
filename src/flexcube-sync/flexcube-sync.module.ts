@@ -58,6 +58,15 @@ export function createFlexcubeSync(
       'FLEXCUBE_KEYPERSON_TYPE_COLUMN is not a valid Oracle column name (default KYC_KEYPERSON_TYPE)',
     );
   }
+  const acknowledged = flexcube.syncUncertainAck.map((entry) => {
+    const m = /^([A-Z0-9]{1,35}):(\d{1,9})$/.exec(entry);
+    if (!m) {
+      throw new FlexcubeSyncConfigError(
+        'FLEXCUBE_SYNC_UNCERTAIN_ACK must list KYC_REF_NO:SEQ_NO entries (comma separated)',
+      );
+    }
+    return { kycRefNo: m[1], seqNo: Number(m[2]) };
+  });
   return new FlexcubeSyncService(
     new FlexcubeKycSource(
       executor,
@@ -72,6 +81,7 @@ export function createFlexcubeSync(
     ),
     workflow,
     flexcube.pollBatchSize,
+    { acknowledgedUncertain: acknowledged },
   );
 }
 
