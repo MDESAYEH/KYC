@@ -147,6 +147,7 @@ describe('FLEXCUBE updater selection', () => {
     stagingStatusInProgress: 'W',
     keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
     finalStatusVocabulary: 'approved-blocked',
+    syncUncertainAck: [] as string[],
     ...over,
   });
   const log = () => ({ warn: jest.fn() });

@@ -54,6 +54,11 @@ export interface AppConfig {
      * constraints). Validated when the status updater is built.
      */
     finalStatusVocabulary: string;
+    /**
+     * Send-guard acknowledgements (FLEXCUBE_SYNC_UNCERTAIN_ACK, comma separated KYC_REF_NO:SEQ_NO):
+     * rows whose uncertain delivery an operator reconciled; they no longer stop sending.
+     */
+    syncUncertainAck: string[];
   };
   /** Production DB is TBD. sqlite (local dev/test only) is the only supported type for now. */
   database: { type: string; sqlitePath: string | undefined };
@@ -101,6 +106,10 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
       stagingStatusInProgress: str(env.FLEXCUBE_STAGING_STATUS_IN_PROGRESS) ?? 'W',
       keypersonTypeColumn: str(env.FLEXCUBE_KEYPERSON_TYPE_COLUMN) ?? 'KYC_KEYPERSON_TYPE',
       finalStatusVocabulary: str(env.FLEXCUBE_FINAL_STATUS_VOCABULARY) ?? 'approved-blocked',
+      syncUncertainAck: (env.FLEXCUBE_SYNC_UNCERTAIN_ACK ?? '')
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean),
     },
     database: {
       type: env.DB_TYPE ?? 'sqlite',
