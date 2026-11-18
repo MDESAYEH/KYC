@@ -361,18 +361,19 @@ describe('FlexcubeSyncService (one polling pass)', () => {
     });
   });
 
-  it('an unexpected error is stored as E and does not stop the other KYCs', async () => {
+  it('an unexpected error from the submission is an uncertain delivery: E, and ALL sending stops', async () => {
     db.master.push({ KYC_REF_NO: 'K9', KYC_CUST_TYPE: 'R', MOD_NO: 1, AUTH_STAT: 'U' });
     db.details.set('K9', INDIVIDUAL_ROW);
     workflow.submit.mockRejectedValueOnce(new TypeError('boom'));
-    expect(await sync.runOnce()).toEqual({ found: 2, sent: 1, failed: 1, skipped: 0 });
-    expect(db.staging.map((r) => [r.KYC_REF_NO, r.PROCESS_STATUS])).toEqual([
-      ['K1', 'E'],
-      ['K9', 'S'],
-    ]);
+    expect(await sync.runOnce()).toEqual({ found: 2, sent: 0, failed: 1, skipped: 0 });
+    // K9 is not even staged: nothing more is sent once a delivery is uncertain
+    expect(db.staging.map((r) => [r.KYC_REF_NO, r.PROCESS_STATUS])).toEqual([['K1', 'E']]);
     expect(db.staging[0].RESPONSE).toBe(
       JSON.stringify({ error: 'TypeError', delivery: 'UNCERTAIN' }),
     );
+    expect(await sync.runOnce()).toEqual({ found: 0, sent: 0, failed: 0, skipped: 0 });
+    expect(workflow.submit).toHaveBeenCalledTimes(1);
+    expect(sync.getStatus().sendingHalted).toBe(true);
   });
 
   it('missing KYC details end as E without calling REIS', async () => {
@@ -445,6 +446,8 @@ describe('FLEXCUBE polling configuration and scheduler', () => {
     syncStartDate: '2026-11-16' as string | undefined,
     stagingStatusInProgress: 'W',
     keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
+    syncOnlyKycRefNos: [] as string[],
+    syncUncertainAck: [] as string[],
     ...over,
   });
   const wf = {} as IKycWorkflow;

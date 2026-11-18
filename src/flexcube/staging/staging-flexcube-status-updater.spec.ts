@@ -142,6 +142,8 @@ describe('FLEXCUBE updater selection', () => {
     syncStartDate: undefined,
     stagingStatusInProgress: 'W',
     keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
+    syncOnlyKycRefNos: [] as string[],
+    syncUncertainAck: [] as string[],
     ...over,
   });
   const log = () => ({ warn: jest.fn() });

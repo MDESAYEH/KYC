@@ -10,6 +10,7 @@ import {
   StagingProcessStatus,
   StagingSubmissionRepository,
 } from '../flexcube/staging/staging-submission.repository';
+import { DuplicateReason } from '../kyc/kyc-submission.result';
 
 export interface SyncRunSummary {
   found: number;
@@ -49,6 +50,20 @@ type Outcome = 'sent' | 'failed' | 'skipped';
 /** A row claimed for longer than this is reported (flexcube.sync.stuckInProgress), never resent. */
 export const STUCK_IN_PROGRESS_MINUTES = 15;
 
+/**
+ * Send guard: a row of ours claimed for longer than this (well above the REIS timeout) means a pass
+ * died after the claim, possibly after the REIS call. Together with E rows marked
+ * {"delivery":"UNCERTAIN"} it stops ALL automatic sending until an operator reconciles the row and
+ * acknowledges it (FLEXCUBE_SYNC_UNCERTAIN_ACK=KYC_REF_NO:SEQ_NO).
+ */
+export const DELIVERY_RISK_IN_PROGRESS_MINUTES = 5;
+
+/** Duplicate reasons that mean REIS may already hold the request: treated as uncertain delivery. */
+const UNCERTAIN_DUPLICATES: ReadonlySet<DuplicateReason> = new Set<DuplicateReason>([
+  'DELIVERY_UNCERTAIN',
+  'IN_PROGRESS_OR_UNCERTAIN',
+]);
+
 /** Circuit breaker: this many technical failures in a row stop the pass and open the breaker. */
 export const BREAKER_THRESHOLD = 3;
 export const BREAKER_BASE_COOLDOWN_MS = 5 * 60_000;
@@ -73,6 +88,8 @@ export interface SyncServiceOptions {
   breakerThreshold?: number;
   breakerBaseCooldownMs?: number;
   breakerMaxCooldownMs?: number;
+  /** Rows an operator reconciled (FLEXCUBE_SYNC_UNCERTAIN_ACK): they no longer stop sending. */
+  acknowledgedUncertain?: StagingKey[];
 }
 
 export interface SyncStatus {
@@ -80,6 +97,8 @@ export interface SyncStatus {
   lastSuccessfulRunAt: string | null;
   consecutiveTechnicalFailures: number;
   circuitOpenUntil: string | null;
+  /** True while an unresolved uncertain delivery stops all automatic sending. */
+  sendingHalted: boolean;
 }
 
 /** Technical failure: Oracle / driver error, invalid SQL binds, or any error outside the KYC data. */
@@ -121,6 +140,11 @@ export class FlexcubeSyncService {
   private lastRunAt: number | null = null;
   private lastSuccessfulRunAt: number | null = null;
   private corporateWasSupported: boolean | null = null;
+  /** Set in this process as soon as a delivery becomes uncertain; the DB check covers restarts. */
+  private haltedInProcess = false;
+  private sendingHalted = false;
+  private canaryLogged = false;
+  private readonly acknowledged: ReadonlySet<string>;
 
   constructor(
     private readonly source: FlexcubeKycSource,
@@ -133,6 +157,9 @@ export class FlexcubeSyncService {
     this.threshold = options.breakerThreshold ?? BREAKER_THRESHOLD;
     this.baseCooldownMs = options.breakerBaseCooldownMs ?? BREAKER_BASE_COOLDOWN_MS;
     this.maxCooldownMs = options.breakerMaxCooldownMs ?? BREAKER_MAX_COOLDOWN_MS;
+    this.acknowledged = new Set(
+      (options.acknowledgedUncertain ?? []).map((k) => `${k.kycRefNo}/${k.seqNo}`),
+    );
   }
 
   /** Technical status for monitoring (no customer data). */
@@ -143,6 +170,7 @@ export class FlexcubeSyncService {
       lastSuccessfulRunAt: iso(this.lastSuccessfulRunAt),
       consecutiveTechnicalFailures: this.consecutiveTechnical,
       circuitOpenUntil: this.breakerOpenUntil > this.now() ? iso(this.breakerOpenUntil) : null,
+      sendingHalted: this.sendingHalted,
     };
   }
 
@@ -163,12 +191,25 @@ export class FlexcubeSyncService {
     this.lastRunAt = started;
     let technicalFailures = 0;
 
+    if (!this.canaryLogged && this.source.onlyKycRefNos.length > 0) {
+      this.canaryLogged = true;
+      this.logger.warn({
+        event: 'flexcube.sync.canaryMode',
+        runId,
+        kycCount: this.source.onlyKycRefNos.length,
+      });
+    }
+
+    // Rows claimed too long are reported first, then the send guard: nothing is sent while any
+    // delivery to REIS is unresolved (or cannot be checked).
+    await this.reportStuckInProgress(runId);
+    if (await this.deliveryUnresolved(runId)) return summary;
+
     // Our own rows left at N by an earlier failed pass go first (same claim -> load -> submit path).
     const stuck = await this.safely(runId, 'recover', () =>
       this.source.findOwnStuckNew(this.batchSize),
     );
     if (stuck === null) technicalFailures++;
-    await this.reportStuckInProgress(runId);
     // The breaker may have opened on the helper queries: do not hammer the database further.
     if (this.breakerOpenUntil > this.now()) return summary;
     let pending: PendingKyc[];
@@ -188,6 +229,7 @@ export class FlexcubeSyncService {
     let item = 0;
     for (const { kyc, recovering } of work) {
       if (this.breakerOpenUntil > this.now()) break; // opened during this pass: stop here
+      if (this.haltedInProcess) break; // a delivery became uncertain: send nothing more
       item++;
       const result = await this.processOne(kyc, recovering, runId, item);
       summary[result.outcome]++;
@@ -270,6 +312,10 @@ export class FlexcubeSyncService {
       this.logger.warn({ event: 'flexcube.sync.invalidSeqNo', runId, item });
       return { outcome: 'skipped', technical: false };
     }
+    if (!this.source.inScope(kyc.kycRefNo)) {
+      this.logger.warn({ event: 'flexcube.sync.outOfCanaryScope', runId, item });
+      return { outcome: 'skipped', technical: false };
+    }
     let step: SyncStep = 'insert';
     let claimed = false;
     try {
@@ -286,7 +332,7 @@ export class FlexcubeSyncService {
       step = 'submit';
       const result = await this.workflow.submit(request, { seqNo: kyc.seqNo });
       step = 'complete';
-      const outcome = await this.complete(key, result);
+      const outcome = await this.complete(key, result, runId);
       this.recordSuccess();
       return { outcome, technical: false };
     } catch (error) {
@@ -301,6 +347,7 @@ export class FlexcubeSyncService {
         action,
         error: oraCode(error),
       });
+      if (kind === 'uncertain' || kind === 'recording') this.haltSending(runId, kind);
       const technical = kind === 'technical' || kind === 'recording';
       if (technical) this.recordTechnical(oraCode(error), runId);
       else this.recordSuccess(); // the database path worked: the failure was about this KYC
@@ -308,7 +355,11 @@ export class FlexcubeSyncService {
     }
   }
 
-  private async complete(key: StagingKey, result: KycSubmissionResult): Promise<Outcome> {
+  private async complete(
+    key: StagingKey,
+    result: KycSubmissionResult,
+    runId: string,
+  ): Promise<Outcome> {
     switch (result.outcome) {
       case 'ONBOARDED':
         await this.staging.complete(key, {
@@ -317,19 +368,34 @@ export class FlexcubeSyncService {
           response: result.reisResponse,
         });
         return 'sent';
-      case 'FAILED':
+      case 'FAILED': {
+        // Timeout, reset, 5xx...: REIS may have the request. Never "not sent": stop and reconcile.
+        const uncertain = result.requestMayHaveReachedReis;
+        if (uncertain) this.haltSending(runId, 'uncertain');
         await this.staging.complete(key, {
           status: StagingProcessStatus.ERROR,
           request: result.reisRequest,
-          response: { error: result.code, stage: result.stage },
+          response: {
+            error: result.code,
+            stage: result.stage,
+            ...(uncertain ? { delivery: 'UNCERTAIN' } : {}),
+          },
         });
         return 'failed';
-      case 'DUPLICATE':
+      }
+      case 'DUPLICATE': {
+        const uncertain = UNCERTAIN_DUPLICATES.has(result.reason);
+        if (uncertain) this.haltSending(runId, 'uncertain');
         await this.staging.complete(key, {
           status: StagingProcessStatus.ERROR,
-          response: { error: 'DUPLICATE', reason: result.reason },
+          response: {
+            error: 'DUPLICATE',
+            reason: result.reason,
+            ...(uncertain ? { delivery: 'UNCERTAIN' } : {}),
+          },
         });
         return 'failed';
+      }
     }
   }
 
@@ -367,6 +433,48 @@ export class FlexcubeSyncService {
           return 'mark_error_failed';
         }
     }
+  }
+
+  // ---- send guard (uncertain delivery) -------------------------------------------------------
+
+  /**
+   * True when sending must stop: a delivery became uncertain in this process, or the staging table
+   * holds an unacknowledged row of ours whose delivery is unknown, or that check failed (no proof
+   * that it is safe = no sending). Logged with counts only.
+   */
+  private async deliveryUnresolved(runId: string): Promise<boolean> {
+    if (this.haltedInProcess) {
+      this.sendingHalted = true;
+      this.logger.error({ event: 'flexcube.sync.sendingHalted', runId, reason: 'IN_PROCESS' });
+      return true;
+    }
+    const risky = await this.safely(runId, 'deliveryCheck', () =>
+      this.staging.findDeliveryRisk(DELIVERY_RISK_IN_PROGRESS_MINUTES, 50),
+    );
+    if (risky === null) {
+      this.sendingHalted = true;
+      this.logger.error({ event: 'flexcube.sync.sendingHalted', runId, reason: 'CHECK_FAILED' });
+      return true;
+    }
+    const open = risky.filter((k) => !this.acknowledged.has(`${k.kycRefNo}/${k.seqNo}`));
+    this.sendingHalted = open.length > 0;
+    if (open.length > 0) {
+      this.logger.error({
+        event: 'flexcube.sync.sendingHalted',
+        runId,
+        reason: 'DELIVERY_UNCERTAIN',
+        unresolvedRows: open.length,
+      });
+    }
+    return open.length > 0;
+  }
+
+  private haltSending(runId: string, kind: FailureKind): void {
+    if (!this.haltedInProcess) {
+      this.logger.error({ event: 'flexcube.sync.haltingAfterUncertainDelivery', runId, kind });
+    }
+    this.haltedInProcess = true;
+    this.sendingHalted = true;
   }
 
   // ---- circuit breaker ---------------------------------------------------------------------

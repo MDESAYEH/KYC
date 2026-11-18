@@ -2,7 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../config/configuration';
 import { FlexcubeModule } from '../flexcube/flexcube.module';
-import { FlexcubeKycSource, normalizeSyncStartDate } from '../flexcube/source/flexcube-kyc-source';
+import {
+  FlexcubeKycSource,
+  MAX_CANARY_KYCS,
+  normalizeSyncStartDate,
+} from '../flexcube/source/flexcube-kyc-source';
 import {
   assertSafeColumnName,
   FLEXCUBE_SQL_EXECUTOR,
@@ -52,12 +56,34 @@ export function createFlexcubeSync(
       'FLEXCUBE_KEYPERSON_TYPE_COLUMN is not a valid Oracle column name (default KYC_KEYPERSON_TYPE)',
     );
   }
+  if (flexcube.syncOnlyKycRefNos.length > MAX_CANARY_KYCS) {
+    throw new FlexcubeSyncConfigError(
+      `FLEXCUBE_SYNC_ONLY_KYC_REF_NOS accepts at most ${MAX_CANARY_KYCS} KYC references`,
+    );
+  }
+  for (const ref of flexcube.syncOnlyKycRefNos) {
+    if (!/^[A-Z0-9]{1,35}$/.test(ref)) {
+      throw new FlexcubeSyncConfigError(
+        'FLEXCUBE_SYNC_ONLY_KYC_REF_NOS must list KYC references (upper-case letters and digits)',
+      );
+    }
+  }
+  const acknowledged = flexcube.syncUncertainAck.map((entry) => {
+    const m = /^([A-Z0-9]{1,35}):(\d{1,9})$/.exec(entry);
+    if (!m) {
+      throw new FlexcubeSyncConfigError(
+        'FLEXCUBE_SYNC_UNCERTAIN_ACK must list KYC_REF_NO:SEQ_NO entries (comma separated)',
+      );
+    }
+    return { kycRefNo: m[1], seqNo: Number(m[2]) };
+  });
   return new FlexcubeSyncService(
     new FlexcubeKycSource(
       executor,
       flexcube.stagingTable,
       flexcube.syncStartDate as string,
       flexcube.keypersonTypeColumn,
+      flexcube.syncOnlyKycRefNos,
     ),
     new StagingSubmissionRepository(
       executor,
@@ -66,6 +92,7 @@ export function createFlexcubeSync(
     ),
     workflow,
     flexcube.pollBatchSize,
+    { acknowledgedUncertain: acknowledged },
   );
 }
 

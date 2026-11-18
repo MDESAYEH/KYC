@@ -48,6 +48,16 @@ export interface AppConfig {
     stagingStatusInProgress: string;
     /** Column of STTM_KYC_CORP_KEYPERSONS holding the party type I / C (FLEXCUBE_KEYPERSON_TYPE_COLUMN). */
     keypersonTypeColumn: string;
+    /**
+     * Canary (FLEXCUBE_SYNC_ONLY_KYC_REF_NOS, comma separated, max 5): when set, a pass only ever
+     * takes these KYCs (pending and recovery). Empty = normal operation. Off by default.
+     */
+    syncOnlyKycRefNos: string[];
+    /**
+     * Send-guard acknowledgements (FLEXCUBE_SYNC_UNCERTAIN_ACK, comma separated KYC_REF_NO:SEQ_NO):
+     * rows whose uncertain delivery was reconciled by an operator and may no longer block sending.
+     */
+    syncUncertainAck: string[];
   };
   /** Production DB is TBD. sqlite (local dev/test only) is the only supported type for now. */
   database: { type: string; sqlitePath: string | undefined };
@@ -56,6 +66,11 @@ export interface AppConfig {
 
 const num = (v: string | undefined): number | undefined =>
   v !== undefined && v.trim() !== '' && !Number.isNaN(Number(v)) ? Number(v) : undefined;
+const list = (v: string | undefined): string[] =>
+  (v ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 const clamp = (v: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, Math.round(v)));
 const str = (v: string | undefined): string | undefined =>
@@ -94,6 +109,8 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
       syncStartDate: str(env.FLEXCUBE_SYNC_START_DATE),
       stagingStatusInProgress: str(env.FLEXCUBE_STAGING_STATUS_IN_PROGRESS) ?? 'W',
       keypersonTypeColumn: str(env.FLEXCUBE_KEYPERSON_TYPE_COLUMN) ?? 'KYC_KEYPERSON_TYPE',
+      syncOnlyKycRefNos: list(env.FLEXCUBE_SYNC_ONLY_KYC_REF_NOS),
+      syncUncertainAck: list(env.FLEXCUBE_SYNC_UNCERTAIN_ACK),
     },
     database: {
       type: env.DB_TYPE ?? 'sqlite',

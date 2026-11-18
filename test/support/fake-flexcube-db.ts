@@ -90,6 +90,27 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
       }
       return { rowsAffected: failed.length };
     }
+    if (sql.includes('RETRY_COUNT = :originalRetryCount')) {
+      // rollback of a restore: only a row still exactly as the restore left it
+      const back = find().filter(
+        (r) =>
+          r.MSGID === b.msgId &&
+          r.PROCESS_STATUS === b.restoredStatus &&
+          r.REQUEST === null &&
+          r.REQ_DATE === undefined &&
+          r.RESPONSE === null &&
+          r.RETRY_COUNT === 0 &&
+          r.RES_DATE === undefined &&
+          (r.REIS_FINAL_STATUS ?? null) === null,
+      );
+      for (const r of back) {
+        r.PROCESS_STATUS = String(b.originalStatus);
+        r.RESPONSE = String(b.originalResponse);
+        r.RETRY_COUNT = Number(b.originalRetryCount);
+        if (b.originalResDate !== null) r.RES_DATE = String(b.originalResDate);
+      }
+      return { rowsAffected: back.length };
+    }
     const rows = find().filter((r) => r.PROCESS_STATUS === b.sourceStatus);
     if (sql.includes('RESPONSE = NULL')) {
       // reconciliation: E -> N only for a row proven closed by a technical failure before any send
@@ -99,7 +120,10 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
           r.REQ_DATE === undefined &&
           (r.REIS_FINAL_STATUS ?? null) === null &&
           r.RETRY_COUNT === 1 &&
-          r.RESPONSE === b.expectedResponse,
+          r.RESPONSE === b.expectedResponse &&
+          r.MSGID === b.msgId &&
+          new RegExp(OWN_MSGID_PATTERN, 'i').test(r.MSGID) &&
+          this.openSince(r.KYC_REF_NO, r.SEQ_NO, String(b.since)),
       );
       for (const r of restored) {
         r.PROCESS_STATUS = String(b.targetStatus);
@@ -153,17 +177,31 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
             (s.REIS_FINAL_STATUS ?? null) === null &&
             s.RETRY_COUNT === 1 &&
             uuid.test(s.MSGID) &&
-            expected.includes(s.RESPONSE),
+            expected.includes(s.RESPONSE) &&
+            (b.onlyKycRefNo === undefined || s.KYC_REF_NO === b.onlyKycRefNo),
         )
-        .filter((s) =>
-          this.master.some(
-            (m) =>
-              m.KYC_REF_NO === s.KYC_REF_NO &&
-              m.MOD_NO === s.SEQ_NO &&
-              (m.RECORD_STAT ?? 'O') === 'O' &&
-              ['R', 'C'].includes(m.KYC_CUST_TYPE) &&
-              (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= String(b.since),
-          ),
+        .filter((s) => this.openSince(s.KYC_REF_NO, s.SEQ_NO, String(b.since)))
+        .slice(0, Number(b.maxRows))
+        .map((s) => ({
+          KYC_REF_NO: s.KYC_REF_NO,
+          SEQ_NO: s.SEQ_NO,
+          MSGID: s.MSGID,
+          PROCESS_STATUS: s.PROCESS_STATUS,
+          RETRY_COUNT: s.RETRY_COUNT,
+          RESPONSE_TEXT: s.RESPONSE,
+          RES_DATE_TEXT: s.RES_DATE ?? null,
+        }));
+    }
+    if (sql.includes(':uncertainMarker')) {
+      const uuid = new RegExp(OWN_MSGID_PATTERN, 'i');
+      return this.staging
+        .filter(
+          (s) =>
+            uuid.test(s.MSGID) &&
+            ((s.PROCESS_STATUS === b.errorStatus &&
+              (s.RESPONSE ?? '').includes(String(b.uncertainMarker))) ||
+              (s.PROCESS_STATUS === b.inProgressStatus &&
+                (s.AGE_MIN ?? 0) > Number(b.ageMinutes))),
         )
         .slice(0, Number(b.maxRows))
         .map((s) => ({ KYC_REF_NO: s.KYC_REF_NO, SEQ_NO: s.SEQ_NO }));
@@ -174,6 +212,7 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
       const uuid = new RegExp(OWN_MSGID_PATTERN, 'i');
       return this.master
         .filter((m) => this.typeAllowed(sql, m.KYC_CUST_TYPE))
+        .filter((m) => this.onlyAllowed(b, m.KYC_REF_NO))
         .filter((m) => (m.RECORD_STAT ?? 'O') === 'O')
         .filter((m) => (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= String(b.since))
         .filter((m) =>
@@ -204,6 +243,7 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
       this.pendingCalls.push({ sql, binds: b });
       return this.master
         .filter((m) => this.typeAllowed(sql, m.KYC_CUST_TYPE))
+        .filter((m) => this.onlyAllowed(b, m.KYC_REF_NO))
         .filter((m) => (m.RECORD_STAT ?? 'O') === 'O')
         .filter((m) => (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= String(b.since))
         .filter(
@@ -222,6 +262,26 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
     }
     const d = this.details.get(k);
     return d ? [d] : [];
+  }
+
+  /** Canary binds :onlyKyc0..n restrict the selection when present. */
+  private onlyAllowed(b: SqlBinds, ref: string): boolean {
+    const only = Object.entries(b)
+      .filter(([k]) => k.startsWith('onlyKyc'))
+      .map(([, v]) => v);
+    return only.length === 0 || only.includes(ref);
+  }
+
+  /** Same rule as the SQL: the KYC is open at that MOD_NO since the cut-off. */
+  private openSince(ref: string, seq: number, since: string): boolean {
+    return this.master.some(
+      (m) =>
+        m.KYC_REF_NO === ref &&
+        m.MOD_NO === seq &&
+        (m.RECORD_STAT ?? 'O') === 'O' &&
+        ['R', 'C'].includes(m.KYC_CUST_TYPE) &&
+        (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= since,
+    );
   }
 
   /** The SQL lists the KYC types it accepts: IN ('R', 'C') or, without corporate support, IN ('R'). */

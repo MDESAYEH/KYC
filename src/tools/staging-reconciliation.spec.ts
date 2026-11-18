@@ -1,11 +1,16 @@
 import { FakeFlexcubeDb, StagingRow } from '../../test/support/fake-flexcube-db';
 import { SINCE } from '../../test/support/sync-fixtures';
 import { StagingSubmissionRepository } from '../flexcube/staging/staging-submission.repository';
+import { NeverSentRow } from '../flexcube/staging/staging-submission.repository';
 import {
+  formatBackup,
+  parseBackup,
   reconcileNeverSent,
   RECONCILE_CONFIRMATION,
   ReconciliationDeps,
   ReconciliationRefusedError,
+  rollbackRestore,
+  ROLLBACK_CONFIRMATION,
 } from './staging-reconciliation';
 
 /** The 58 rows of the ORA-01745 incident: E, never claimed, nothing stored but the technical marker. */
@@ -39,7 +44,7 @@ describe('reconciliation of rows closed as E although nothing was sent', () => {
     ...over,
   });
   const dry = { since: SINCE, errorCodes: ['ORA-01745'], maxRows: 500, apply: false };
-  const apply = { ...dry, apply: true, confirmation: RECONCILE_CONFIRMATION };
+  const apply = { ...dry, apply: true, all: true, confirmation: RECONCILE_CONFIRMATION };
   const snapshot = () => JSON.stringify(db.staging);
 
   beforeEach(() => {
@@ -56,6 +61,7 @@ describe('reconciliation of rows closed as E although nothing was sent', () => {
     const before = snapshot();
     expect(await reconcileNeverSent(deps(), dry)).toEqual({
       mode: 'dry-run',
+      scope: 'all',
       candidates: 3,
       eligible: 3,
       excludedLocalCase: 0,
@@ -100,6 +106,7 @@ describe('reconciliation of rows closed as E although nothing was sent', () => {
     );
     expect(report).toEqual({
       mode: 'applied',
+      scope: 'all',
       candidates: 3,
       eligible: 3,
       excludedLocalCase: 0,
@@ -212,5 +219,163 @@ describe('reconciliation of rows closed as E although nothing was sent', () => {
     );
     expect(JSON.stringify(report)).not.toMatch(/K1|K2|K3/);
     expect(db.statements.some((s) => /DELETE|INSERT/i.test(s))).toBe(false);
+  });
+
+  // ---- one KYC, full backup, rollback (review of PR #1) -------------------------------------
+
+  const one = { ...dry, onlyKycRefNo: 'K2' };
+  const applyOne = { ...one, apply: true, confirmation: RECONCILE_CONFIRMATION };
+
+  it('--kyc: the dry run and the apply only ever see and touch that one KYC', async () => {
+    expect(await reconcileNeverSent(deps(), one)).toMatchObject({
+      mode: 'dry-run',
+      scope: 'one-kyc',
+      candidates: 1,
+      eligible: 1,
+    });
+    const report = await reconcileNeverSent(deps(), applyOne);
+    expect(report).toMatchObject({ scope: 'one-kyc', restored: 1, notRestored: 0 });
+    expect(backups).toEqual([['K2']]);
+    expect(db.staging.map((r) => [r.KYC_REF_NO, r.PROCESS_STATUS])).toEqual([
+      ['K1', 'E'],
+      ['K2', 'N'],
+      ['K3', 'E'],
+    ]);
+  });
+
+  it('apply needs an explicit scope (--kyc or --all), and they cannot be combined', async () => {
+    const before = snapshot();
+    await expect(
+      reconcileNeverSent(deps(), { ...dry, apply: true, confirmation: RECONCILE_CONFIRMATION }),
+    ).rejects.toThrow('explicit scope');
+    await expect(
+      reconcileNeverSent(deps(), { ...applyOne, all: true }),
+    ).rejects.toBeInstanceOf(ReconciliationRefusedError);
+    await expect(
+      reconcileNeverSent(deps(), { ...applyOne, onlyKycRefNo: "K2' OR '1'='1" }),
+    ).rejects.toThrow('not valid');
+    expect(snapshot()).toBe(before);
+  });
+
+  it('the backup holds every original value a rollback needs, not only the keys', async () => {
+    db.staging.find((r) => r.KYC_REF_NO === 'K2')!.RES_DATE = '2026-05-31T01:38:41';
+    let saved: NeverSentRow[] = [];
+    await reconcileNeverSent(
+      deps({
+        writeBackup: async (rows) => {
+          saved = rows;
+        },
+      }),
+      applyOne,
+    );
+    expect(saved).toEqual([
+      {
+        kycRefNo: 'K2',
+        seqNo: 1,
+        msgId: OWN,
+        processStatus: 'E',
+        response: MARKER,
+        retryCount: 1,
+        resDate: '2026-05-31T01:38:41',
+        reqDate: null,
+        request: null,
+        reisFinalStatus: null,
+      },
+    ]);
+    // the file format round-trips exactly
+    expect(parseBackup(formatBackup(saved, { since: SINCE, codes: ['ORA-01745'] }))).toEqual(saved);
+  });
+
+  it('the UPDATE re-checks MSGID, MOD_NO, KYC state and cut-off: changes after the SELECT win', async () => {
+    const changes: Record<string, () => void> = {
+      K1: () => {
+        db.staging.find((r) => r.KYC_REF_NO === 'K1')!.MSGID = '0e8f2a7c-1111-4c2d-9a9a-1234567890ab';
+      },
+      K2: () => {
+        db.master.find((m) => m.KYC_REF_NO === 'K2')!.MOD_NO = 2; // KYC modified: new MOD_NO
+      },
+      K3: () => {
+        db.master.find((m) => m.KYC_REF_NO === 'K3')!.RECORD_STAT = 'C'; // KYC closed
+      },
+    };
+    const report = await reconcileNeverSent(
+      deps({
+        writeBackup: async () => {
+          for (const change of Object.values(changes)) change();
+        },
+      }),
+      apply,
+    );
+    expect(report).toMatchObject({ eligible: 3, restored: 0, notRestored: 3 });
+    expect(db.staging.every((r) => r.PROCESS_STATUS === 'E')).toBe(true);
+  });
+
+  it('a KYC moved before the cut-off after the SELECT is not restored either', async () => {
+    const report = await reconcileNeverSent(
+      deps({
+        writeBackup: async () => {
+          db.master.find((m) => m.KYC_REF_NO === 'K2')!.MAKER_DT_STAMP = '2026-01-01T00:00:00';
+        },
+      }),
+      applyOne,
+    );
+    expect(report).toMatchObject({ restored: 0, notRestored: 1 });
+  });
+
+  it('rollback puts the backed-up E values back, dry run by default, confirmation required', async () => {
+    let saved: NeverSentRow[] = [];
+    await reconcileNeverSent(deps({ writeBackup: async (rows) => void (saved = rows) }), applyOne);
+    const repo = new StagingSubmissionRepository(db, 'STAGE');
+    const afterRestore = snapshot();
+    expect(await rollbackRestore(repo, saved, { apply: false })).toMatchObject({
+      mode: 'dry-run',
+      selected: 1,
+      rolledBack: 0,
+    });
+    expect(snapshot()).toBe(afterRestore);
+    await expect(rollbackRestore(repo, saved, { apply: true })).rejects.toBeInstanceOf(
+      ReconciliationRefusedError,
+    );
+    expect(
+      await rollbackRestore(repo, saved, { apply: true, confirmation: ROLLBACK_CONFIRMATION }),
+    ).toMatchObject({ rolledBack: 1, notRolledBack: 0 });
+    expect(db.staging.find((r) => r.KYC_REF_NO === 'K2')).toMatchObject({
+      PROCESS_STATUS: 'E',
+      RESPONSE: MARKER,
+      RETRY_COUNT: 1,
+      RES_DATE: 'SYSDATE',
+    });
+  });
+
+  it('rollback never overwrites a row the sync has already picked up again', async () => {
+    let saved: NeverSentRow[] = [];
+    await reconcileNeverSent(deps({ writeBackup: async (rows) => void (saved = rows) }), applyOne);
+    const row = db.staging.find((r) => r.KYC_REF_NO === 'K2')!;
+    row.PROCESS_STATUS = 'W'; // claimed by the sync after the restore
+    row.REQ_DATE = 'SYSDATE';
+    const repo = new StagingSubmissionRepository(db, 'STAGE');
+    expect(
+      await rollbackRestore(repo, saved, { apply: true, confirmation: ROLLBACK_CONFIRMATION }),
+    ).toMatchObject({ rolledBack: 0, notRolledBack: 1 });
+    expect(row.PROCESS_STATUS).toBe('W');
+  });
+
+  it('a damaged backup file is refused as a whole', () => {
+    expect(() => parseBackup('{"kycRefNo":"K1","seqNo":1}\n')).toThrow(
+      ReconciliationRefusedError,
+    );
+    expect(() =>
+      parseBackup(
+        JSON.stringify({
+          kycRefNo: "K1' OR 1=1",
+          seqNo: 1,
+          msgId: OWN,
+          processStatus: 'E',
+          response: MARKER,
+          retryCount: 1,
+          resDate: null,
+        }),
+      ),
+    ).toThrow();
   });
 });
