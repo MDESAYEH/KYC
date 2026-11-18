@@ -179,3 +179,15 @@ SELECT TABLE_SCHEMA, TABLE_NAME, PRIVILEGE, GRANTEE, GRANTOR
 SELECT OWNER, OBJECT_NAME, OBJECT_TYPE FROM DBA_OBJECTS
              WHERE OBJECT_TYPE IN ('TABLE', 'VIEW', 'SYNONYM') AND OBJECT_NAME LIKE 'STTM\_CUST%' ESCAPE '\'
              ORDER BY OWNER, OBJECT_NAME FETCH FIRST :maxRows ROWS ONLY;
+
+-- E:triggerTableColumns
+-- Columns of the trigger table STTM_CUSTOMER_CUSTOM agreed with Finexta (CUSTOMER_NO, KYC_REF_NO, READY_TO_SCAN expected): is there a date or version column?
+SELECT OWNER, TABLE_NAME, COLUMN_NAME, DATA_TYPE, DATA_LENGTH, NULLABLE
+              FROM ALL_TAB_COLUMNS
+             WHERE TABLE_NAME = 'STTM_CUSTOMER_CUSTOM'
+             ORDER BY OWNER, COLUMN_ID FETCH FIRST :maxRows ROWS ONLY;
+
+-- E:triggerTableStatusCounts
+-- Counts of READY_TO_SCAN values in STTM_CUSTOMER_CUSTOM (U / P expected): is the table backfilled with old customers? Counts only, no identifiers.
+SELECT READY_TO_SCAN, COUNT(*) AS N FROM STTM_CUSTOMER_CUSTOM
+             GROUP BY READY_TO_SCAN ORDER BY N DESC FETCH FIRST :maxRows ROWS ONLY;

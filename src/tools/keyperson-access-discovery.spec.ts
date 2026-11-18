@@ -66,7 +66,7 @@ describe('key-person type and access discovery (read-only)', () => {
     const ac = await runReadOnlyDiscovery(db as never, { part: 'access' });
     expect(kp.queries).toHaveLength(4);
     expect(ac.queries.find((q) => q.name === 'access:dbaCustomerObjects')?.error).toBe('ORA-00942');
-    expect(ac.queries.filter((q) => !q.error)).toHaveLength(2);
+    expect(ac.queries.filter((q) => !q.error)).toHaveLength(4);
     expect(seen.every((s) => /^\s*SELECT/i.test(s))).toBe(true);
   });
 });

@@ -105,6 +105,24 @@ export function accessDiscoveryQueries(options: { maxRows?: number }): Discovery
       binds: { maxRows },
     },
     {
+      name: 'triggerTableColumns',
+      purpose:
+        'Columns of the trigger table STTM_CUSTOMER_CUSTOM agreed with Finexta (CUSTOMER_NO, KYC_REF_NO, READY_TO_SCAN expected): is there a date or version column?',
+      sql: `SELECT OWNER, TABLE_NAME, COLUMN_NAME, DATA_TYPE, DATA_LENGTH, NULLABLE
+              FROM ALL_TAB_COLUMNS
+             WHERE TABLE_NAME = 'STTM_CUSTOMER_CUSTOM'
+             ORDER BY OWNER, COLUMN_ID FETCH FIRST :maxRows ROWS ONLY`,
+      binds: { maxRows },
+    },
+    {
+      name: 'triggerTableStatusCounts',
+      purpose:
+        'Counts of READY_TO_SCAN values in STTM_CUSTOMER_CUSTOM (U / P expected): is the table backfilled with old customers? Counts only, no identifiers.',
+      sql: `SELECT READY_TO_SCAN, COUNT(*) AS N FROM STTM_CUSTOMER_CUSTOM
+             GROUP BY READY_TO_SCAN ORDER BY N DESC FETCH FIRST :maxRows ROWS ONLY`,
+      binds: { maxRows },
+    },
+    {
       name: 'dbaCustomerObjects',
       purpose:
         'DBA-ONLY (expected ORA-00942 for this account; run by Finexta): do STTM_CUST% objects exist and in which schema?',
