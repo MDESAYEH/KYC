@@ -7,10 +7,10 @@ export interface FlexcubeStatusUpdate {
   finalStatus: ReisFinalStatus;
   reisCustomerId?: number;
   /**
-   * The exact submission (staging SEQ_NO) the decision belongs to. When given, only that revision is
-   * updated; when absent the latest SEQ_NO of the KYC is (historical behavior).
+   * The exact submission (staging SEQ_NO) the decision belongs to: REQUIRED. Only that revision is updated; there
+   * is no "latest revision" fallback (a delayed decision of revision 2 must never reach revision 3).
    */
-  seqNo?: number;
+  seqNo: number;
   /** Internal idempotency key so a real updater can safely ignore duplicates. */
   idempotencyKey: string;
 }

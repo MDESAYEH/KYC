@@ -16,6 +16,7 @@ import {
 import { OracleSqlExecutor } from './oracle-sql-executor';
 import {
   StagingFlexcubeStatusUpdater,
+  StagingRevisionRequiredError,
   StagingRowNotUpdatedError,
 } from './staging-flexcube-status-updater';
 
@@ -50,10 +51,11 @@ class FakeStaging implements IFlexcubeSqlExecutor {
   }
 }
 
-const update = (kycRefNo: string, finalStatus: ReisFinalStatus) => ({
+const update = (kycRefNo: string, finalStatus: ReisFinalStatus, seqNo = 1) => ({
   kycRefNo,
   customerNo: null,
   finalStatus,
+  seqNo,
   idempotencyKey: `${kycRefNo}:${finalStatus}`,
 });
 
@@ -74,13 +76,13 @@ describe('StagingFlexcubeStatusUpdater', () => {
     updater = new StagingFlexcubeStatusUpdater(db, 'STTM_KYC_REIS_PAYLOAD_CUSTOM');
   });
 
-  it('writes APPROVED on the latest submission (highest SEQ_NO) only', async () => {
+  it('writes APPROVED on the EXACT submission named by seqNo only (here 2, never 1 or K2)', async () => {
     db.rows = [
       { KYC_REF_NO: 'K1', SEQ_NO: 1, REIS_FINAL_STATUS: 'BLOCKED' },
       { KYC_REF_NO: 'K1', SEQ_NO: 2, REIS_FINAL_STATUS: null },
       { KYC_REF_NO: 'K2', SEQ_NO: 1, REIS_FINAL_STATUS: null },
     ];
-    await updater.updateStatus(update('K1', ReisFinalStatus.CUSTOMER));
+    await updater.updateStatus(update('K1', ReisFinalStatus.CUSTOMER, 2));
     expect(db.rows).toEqual([
       { KYC_REF_NO: 'K1', SEQ_NO: 1, REIS_FINAL_STATUS: 'BLOCKED' },
       { KYC_REF_NO: 'K1', SEQ_NO: 2, REIS_FINAL_STATUS: 'APPROVED' },
@@ -93,7 +95,34 @@ describe('StagingFlexcubeStatusUpdater', () => {
     await updater.updateStatus(update("K'1", ReisFinalStatus.BLOCKED));
     expect(db.calls[0].sql).not.toContain("K'1");
     expect(db.calls[0].sql).toContain('STTM_KYC_REIS_PAYLOAD_CUSTOM');
-    expect(db.calls[0].binds).toEqual({ finalStatus: 'BLOCKED', kycRefNo: "K'1" });
+    expect(db.calls[0].binds).toEqual({ finalStatus: 'BLOCKED', kycRefNo: "K'1", seqNo: 1 });
+  });
+
+  it('REFUSES an update without an exact seqNo: no "latest revision" fallback, nothing reaches Oracle', async () => {
+    db.rows = [
+      { KYC_REF_NO: 'K1', SEQ_NO: 2, REIS_FINAL_STATUS: null },
+      { KYC_REF_NO: 'K1', SEQ_NO: 3, REIS_FINAL_STATUS: null },
+    ];
+    for (const seqNo of [undefined, null, NaN, 1.5, '3'])
+      await expect(
+        updater.updateStatus({ ...update('K1', ReisFinalStatus.CUSTOMER), seqNo } as never),
+      ).rejects.toBeInstanceOf(StagingRevisionRequiredError);
+    expect(db.calls).toHaveLength(0);
+    expect(db.rows.every((r) => r.REIS_FINAL_STATUS === null)).toBe(true);
+  });
+
+  it('a delayed decision of revision 2 never reaches revision 3, even when 3 is the latest and still open', async () => {
+    db.rows = [
+      { KYC_REF_NO: 'K1', SEQ_NO: 2, REIS_FINAL_STATUS: 'APPROVED' },
+      { KYC_REF_NO: 'K1', SEQ_NO: 3, REIS_FINAL_STATUS: null },
+    ];
+    // duplicate of the revision-2 decision: idempotent on 2, 3 untouched
+    await updater.updateStatus(update('K1', ReisFinalStatus.CUSTOMER, 2));
+    // a contrary late decision of revision 2: refused, 2 keeps its decision, 3 untouched
+    await expect(
+      updater.updateStatus(update('K1', ReisFinalStatus.BLOCKED, 2)),
+    ).rejects.toBeInstanceOf(StagingRowNotUpdatedError);
+    expect(db.rows.map((r) => r.REIS_FINAL_STATUS)).toEqual(['APPROVED', null]);
   });
 
   it('is idempotent for the same status', async () => {
@@ -260,7 +289,7 @@ describe('final status vocabulary and exact-revision updates', () => {
       db.rows = [row(1), row(2)];
       const updater = new StagingFlexcubeStatusUpdater(db, 'T', vocabulary);
       await updater.updateStatus({ ...update('K1', ReisFinalStatus.CUSTOMER), seqNo: 1 });
-      await updater.updateStatus(update('K1', ReisFinalStatus.BLOCKED)); // latest = 2
+      await updater.updateStatus(update('K1', ReisFinalStatus.BLOCKED, 2));
       expect(db.rows[1].REIS_FINAL_STATUS).toBe('BLOCKED');
     }
   });

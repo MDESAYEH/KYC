@@ -8,6 +8,7 @@ import { AddReisResponseText1790000000001 } from './migrations/1790000000001-Add
 import { FlexcubeUpdateStateAndWebhookAudit1790000000002 } from './migrations/1790000000002-FlexcubeUpdateStateAndWebhookAudit';
 import { FlexcubeUpdateAttemptTracking1790000000003 } from './migrations/1790000000003-FlexcubeUpdateAttemptTracking';
 import { SubmissionSeqNo1790000000004 } from './migrations/1790000000004-SubmissionSeqNo';
+import { RevisionCount1790000000005 } from './migrations/1790000000005-RevisionCount';
 import { UnsupportedDatabaseError } from './persistence.errors';
 
 export const ENTITIES = [KycCaseEntity, ReferenceMappingEntity, WebhookEventEntity];
@@ -17,6 +18,7 @@ export const MIGRATIONS = [
   FlexcubeUpdateStateAndWebhookAudit1790000000002,
   FlexcubeUpdateAttemptTracking1790000000003,
   SubmissionSeqNo1790000000004,
+  RevisionCount1790000000005,
 ];
 
 /**

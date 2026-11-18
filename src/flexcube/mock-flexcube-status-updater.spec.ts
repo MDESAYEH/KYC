@@ -8,6 +8,7 @@ describe('MockFlexcubeStatusUpdater', () => {
       kycRefNo: 'K1',
       customerNo: null,
       finalStatus: ReisFinalStatus.CUSTOMER,
+      seqNo: 1,
       idempotencyKey: 'k',
     });
     expect(u.received).toHaveLength(1);

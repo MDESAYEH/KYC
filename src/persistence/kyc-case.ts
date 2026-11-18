@@ -46,6 +46,11 @@ export interface KycCase {
   flexcubeLastAttemptAt: Date | null;
   /** Latest FLEXCUBE submission sequence (staging SEQ_NO); 1 for the first submission. */
   seqNo: number;
+  /**
+   * Revisions ever sent under this systemId. A REIS callback carries no revision: with more than one it cannot be
+   * attributed to a revision, so it is quarantined instead of applied (B5).
+   */
+  revisionCount: number;
   retryCount: number;
   lastErrorCode: string | null;
   lastErrorMessage: string | null;

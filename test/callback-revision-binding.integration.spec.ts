@@ -21,7 +21,9 @@ import { createTestDataSource } from './support/test-database';
  * The seqNo therefore comes from OUR persisted case, written when we sent that exact revision. These
  * tests prove the chain end to end (real SQLite repositories + the real webhook service + the real
  * status updater against an in-memory Oracle double) and document the one residual ambiguity that only
- * REIS can remove (a second, late callback for an earlier revision of the SAME identity).
+ * REIS can remove (a second, late callback for an earlier revision of the SAME identity). That ambiguity is now
+ * QUARANTINED, never applied: once more than one revision was ever sent under an identity (kyc_case.revision_count > 1),
+ * a callback arriving while the current revision is pending is audited as RECONCILIATION_REQUIRED and changes nothing.
  * Synthetic identifiers only; no live system is touched.
  */
 jest.setTimeout(30_000);
@@ -154,26 +156,85 @@ describe('callback -> revision binding (no seqNo in the REIS callback)', () => {
     // => the trial may only be sent together with FLEXCUBE_FINAL_STATUS_VOCABULARY=clean-pending-blocked
   });
 
-  it('RESIDUAL LIMIT (needs REIS): a late DUPLICATE callback of revision 2 is applied to a pending revision 3 of the same identity', async () => {
-    // revision 2 finalized by its callback ...
+  /** Revision 2 answered and finalized, then revision 3 sent under the same CIF and left PENDING. */
+  async function rev2FinalThenRev3(svc: CustomerStatusService, thirdPending: boolean) {
     await pendingCase(SYN.kycRefNo, SYN.cif, 2);
-    const svc = service('clean-pending-blocked');
     expect((await svc.handle(callback(SYN.cif, 'CUSTOMER'))).result).toBe('APPLIED');
-    // ... then revision 3 is sent under the same CIF and is pending
     const c = (await cases.findByReisSystemId(SYN.cif))!;
-    await cases.reopenForAmendment(c.internalId, 3, CustomerType.INDIVIDUAL);
-    await cases.updateInternalStatus(c.internalId, KycRequestStatus.SUBMITTED_TO_REIS);
-    await cases.recordOnboardingResult(c.internalId, {
-      reisOnboardingStatus: ReisOnboardingStatus.PENDING,
+    expect(await cases.reopenForAmendment(c.internalId, 3, CustomerType.INDIVIDUAL)).not.toBeNull();
+    if (thirdPending) {
+      await cases.updateInternalStatus(c.internalId, KycRequestStatus.SUBMITTED_TO_REIS);
+      await cases.recordOnboardingResult(c.internalId, {
+        reisOnboardingStatus: ReisOnboardingStatus.PENDING,
+      });
+    }
+    oracle.rows.push({
+      KYC_REF_NO: SYN.kycRefNo,
+      SEQ_NO: 3,
+      REIS_FINAL_STATUS: thirdPending ? 'PENDING' : null,
     });
-    oracle.rows.push({ KYC_REF_NO: SYN.kycRefNo, SEQ_NO: 3, REIS_FINAL_STATUS: 'PENDING' });
-    // a second callback meant for revision 2 arrives: nothing in it tells the two apart (no seqNo, same
-    // systemId), so it is applied to revision 3. Only a REIS revision token, or never sending revision
-    // N+1 while a callback for N could still arrive, prevents this. The trial sends ONE revision only.
+    return c.internalId;
+  }
+
+  it('B5: a late DUPLICATE callback of revision 2 is QUARANTINED while revision 3 is pending: nothing applied, nothing written', async () => {
+    const svc = service('clean-pending-blocked');
+    await rev2FinalThenRev3(svc, true);
+    const writesBefore = oracle.writes.length;
     const late = await svc.handle(callback(SYN.cif, 'CUSTOMER'));
-    expect(late.result).toBe('APPLIED');
-    expect(row(3).REIS_FINAL_STATUS).toBe('CLEAN');
-    expect(row(2).REIS_FINAL_STATUS).toBe('CLEAN'); // revision 2 keeps its own decision
+    expect(late.result).toBe('RECONCILIATION_REQUIRED');
+    expect(row(3).REIS_FINAL_STATUS).toBe('PENDING'); // revision 3 is NOT decided by revision 2's duplicate
+    expect(row(2).REIS_FINAL_STATUS).toBe('CLEAN');
+    expect(oracle.writes).toHaveLength(writesBefore);
+    const c = (await cases.findByReisSystemId(SYN.cif))!;
+    expect(c).toMatchObject({
+      seqNo: 3,
+      revisionCount: 2,
+      finalStatus: null,
+      internalRequestStatus: KycRequestStatus.REIS_PENDING,
+    });
+    const audited = await events.listBySystemId(SYN.cif);
+    expect(audited.map((e) => e.processingResult)).toContain('RECONCILIATION_REQUIRED');
+  });
+
+  it('B5: the genuine answer of revision 3 is quarantined too (ambiguous without a REIS revision token): safe, needs reconciliation', async () => {
+    const svc = service('clean-pending-blocked');
+    await rev2FinalThenRev3(svc, true);
+    expect((await svc.handle(callback(SYN.cif, 'BLOCKED'))).result).toBe('RECONCILIATION_REQUIRED');
+    expect(row(3).REIS_FINAL_STATUS).toBe('PENDING');
+  });
+
+  it('B5 delayed callback: revision 3 cannot be sent while revision 2 is still pending, so the delayed answer of 2 reaches 2 only', async () => {
+    await pendingCase(SYN.kycRefNo, SYN.cif, 2);
+    const c = (await cases.findByReisSystemId(SYN.cif))!;
+    // FLEXCUBE advanced to revision 3 while REIS has not answered revision 2: refused, nothing changes
+    expect(await cases.reopenForAmendment(c.internalId, 3, CustomerType.INDIVIDUAL)).toBeNull();
+    expect(await cases.findByReisSystemId(SYN.cif)).toMatchObject({ seqNo: 2, revisionCount: 1 });
+    // the delayed answer now arrives: unambiguous (one revision ever sent), applied to revision 2 only
+    const out = await service('clean-pending-blocked').handle(callback(SYN.cif, 'CUSTOMER'));
+    expect(out.result).toBe('APPLIED');
+    expect(row(2).REIS_FINAL_STATUS).toBe('CLEAN');
+    expect(oracle.rows.find((r) => r.SEQ_NO === 3)).toBeUndefined();
+    expect(oracle.writes.map((w) => w.seqNo)).toEqual([2]);
+  });
+
+  it('B5 out-of-order: a late callback of revision 2 while revision 3 is only RECEIVED (not sent yet) is not applied', async () => {
+    const svc = service('clean-pending-blocked');
+    await rev2FinalThenRev3(svc, false);
+    const writesBefore = oracle.writes.length;
+    expect((await svc.handle(callback(SYN.cif, 'CUSTOMER'))).result).toBe('INCONSISTENT_STATE');
+    expect(oracle.writes).toHaveLength(writesBefore);
+    expect(row(3).REIS_FINAL_STATUS).toBeNull();
+  });
+
+  it('B5 out-of-order: after revision 3 was answered CLEAN, a late callback of revision 2 changes nothing', async () => {
+    const svc = service('clean-pending-blocked');
+    const id = await rev2FinalThenRev3(svc, false);
+    await cases.updateInternalStatus(id, KycRequestStatus.SUBMITTED_TO_REIS);
+    await cases.recordOnboardingResult(id, { reisOnboardingStatus: ReisOnboardingStatus.CLEAN });
+    const writesBefore = oracle.writes.length;
+    expect((await svc.handle(callback(SYN.cif, 'BLOCKED'))).result).toBe('INCONSISTENT_STATE');
+    expect(oracle.writes).toHaveLength(writesBefore);
+    expect(row(2).REIS_FINAL_STATUS).toBe('CLEAN');
   });
 
   it('the single-record trial identities (old KYC reference AND the CIF) are quarantined: audited, no status, no write', async () => {

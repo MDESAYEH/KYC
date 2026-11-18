@@ -67,6 +67,7 @@ function toDomain(e: KycCaseEntity): KycCase {
     flexcubeUpdateAttemptCount: e.flexcubeUpdateAttemptCount,
     flexcubeLastAttemptAt: e.flexcubeLastAttemptAt,
     seqNo: e.seqNo,
+    revisionCount: e.revisionCount,
     retryCount: e.retryCount,
     lastErrorCode: e.lastErrorCode,
     lastErrorMessage: e.lastErrorMessage,
@@ -104,6 +105,7 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
       customerType: input.customerType,
       internalRequestStatus: KycRequestStatus.RECEIVED,
       seqNo: input.seqNo ?? 1,
+      revisionCount: 1,
       retryCount: 0,
       finalStatusReceivedCount: 0,
       flexcubeUpdateStatus: FlexcubeUpdateStatus.NOT_ATTEMPTED,
@@ -254,6 +256,7 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
       .update()
       .set({
         seqNo,
+        revisionCount: () => 'revision_count + 1',
         customerType,
         internalRequestStatus: KycRequestStatus.RECEIVED,
         reisOnboardingStatus: null,
@@ -354,6 +357,12 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
       }
       if (current.internalRequestStatus !== KycRequestStatus.REIS_PENDING) {
         return { outcome: 'INCONSISTENT_STATE', kycCase: current };
+      }
+      // B5: the callback carries no revision. With a single revision ever sent under this systemId there is
+      // exactly one possible origin. With more, a delayed / duplicate callback of an EARLIER revision is
+      // indistinguishable from the answer to the current one: never guess, quarantine and reconcile.
+      if (current.revisionCount > 1) {
+        return { outcome: 'RECONCILIATION_REQUIRED', kycCase: current };
       }
       const res = await manager
         .getRepository(KycCaseEntity)

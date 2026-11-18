@@ -119,6 +119,9 @@ describe('schema migrations', () => {
       // Revert one migration at a time, each cleanly.
       const names = async () =>
         ((await ds.query('PRAGMA table_info(kyc_case)')) as { name: string }[]).map((c) => c.name);
+      expect(await names()).toContain('revision_count');
+      await ds.undoLastMigration({ transaction: 'all' }); // migration 6
+      expect(await names()).not.toContain('revision_count');
       expect(await names()).toContain('seq_no');
       await ds.undoLastMigration({ transaction: 'all' }); // migration 5
       expect(await names()).not.toContain('seq_no');

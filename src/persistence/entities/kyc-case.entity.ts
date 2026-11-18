@@ -78,6 +78,10 @@ export class KycCaseEntity {
   @Column({ name: 'seq_no', type: 'integer', default: 1 })
   seqNo: number;
 
+  /** Revisions ever sent under this systemId (1 = a single possible origin for a callback). */
+  @Column({ name: 'revision_count', type: 'integer', default: 1 })
+  revisionCount: number;
+
   @Column({ name: 'retry_count', type: 'integer', default: 0 })
   retryCount: number;
 

@@ -123,6 +123,7 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
         kycRefNo: key.kycRefNo,
         customerNo: null,
         finalStatus: ReisFinalStatus.CUSTOMER,
+        seqNo: key.seqNo,
         idempotencyKey: 'catalog',
       }),
     );

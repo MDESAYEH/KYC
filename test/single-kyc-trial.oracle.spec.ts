@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { assertDisposableDatabase, isolatedOracleConfig } from './support/isolated-oracle';
 import { OracleSqlExecutor } from '../src/flexcube/staging/oracle-sql-executor';
 import { IFlexcubeSqlExecutor, SqlBinds } from '../src/flexcube/staging/flexcube-staging';
 import { SingleKycTrialRepository } from '../src/tools/single-kyc-trial.repository';
@@ -7,12 +8,8 @@ import { SINGLE_KYC_TRIAL as TARGET } from '../src/tools/single-kyc-trial.contra
 /** Never reads .env. Run ONLY with an explicitly approved disposable schema, never bank UAT/PROD.
  * Creates two randomly named tables, not STTM_* tables. DDL is an assumed fixture, not bank DDL.
  */
-const enabled =
-  process.env.KYC_SINGLE_ORACLE_TEST_CONFIRM === 'CREATE_AND_DROP_ISOLATED_TRIAL_TABLES' &&
-  !!process.env.KYC_SINGLE_ORACLE_TEST_USER &&
-  !!process.env.KYC_SINGLE_ORACLE_TEST_PASSWORD &&
-  !!process.env.KYC_SINGLE_ORACLE_TEST_CONNECT;
-(enabled ? describe : describe.skip)('single-trial statements on real ISOLATED Oracle', () => {
+const cfg = isolatedOracleConfig('KYC_SINGLE_ORACLE_TEST', 'CREATE_AND_DROP_ISOLATED_TRIAL_TABLES');
+(cfg ? describe : describe.skip)('single-trial statements on real ISOLATED Oracle', () => {
   const suffix = randomBytes(4).toString('hex').toUpperCase();
   const master = `KTR_MASTER_${suffix}`,
     stage = `KTR_STAGE_${suffix}`;
@@ -22,11 +19,8 @@ const enabled =
   let createdMaster = false,
     createdStage = false;
   beforeAll(async () => {
-    db = new OracleSqlExecutor({
-      user: process.env.KYC_SINGLE_ORACLE_TEST_USER!,
-      password: process.env.KYC_SINGLE_ORACLE_TEST_PASSWORD!,
-      connectString: process.env.KYC_SINGLE_ORACLE_TEST_CONNECT!,
-    });
+    db = new OracleSqlExecutor(cfg!);
+    await assertDisposableDatabase(db);
     await db.execute(
       `CREATE TABLE ${master} (KYC_REF_NO VARCHAR2(100) PRIMARY KEY, MOD_NO NUMBER, KYC_CUST_TYPE CHAR(1), RECORD_STAT CHAR(1))`,
       {},

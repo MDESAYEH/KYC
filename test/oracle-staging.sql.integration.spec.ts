@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { assertDisposableDatabase, isolatedOracleConfig } from './support/isolated-oracle';
 import { oracleErrorCode } from '../src/flexcube/oracle-error';
 import { OracleSqlExecutor } from '../src/flexcube/staging/oracle-sql-executor';
 import {
@@ -22,13 +23,9 @@ import { collectSqlCatalog } from '../src/tools/sql-catalog';
  * pointed at UAT1 / PRODUCTION. The columns below are an ASSUMED shape of the staging table
  * (REQUEST / RESPONSE as CLOB): compare with the real DDL before trusting a result.
  */
-const enabled =
-  process.env.KYC_ORACLE_TEST_CONFIRM === 'CREATE_AND_DROP_A_TEST_TABLE' &&
-  !!process.env.KYC_ORACLE_TEST_USER &&
-  !!process.env.KYC_ORACLE_TEST_PASSWORD &&
-  !!process.env.KYC_ORACLE_TEST_CONNECT;
+const cfg = isolatedOracleConfig('KYC_ORACLE_TEST', 'CREATE_AND_DROP_A_TEST_TABLE');
 
-(enabled ? describe : describe.skip)('staging SQL on a real, isolated Oracle schema', () => {
+(cfg ? describe : describe.skip)('staging SQL on a real, isolated Oracle schema', () => {
   const table = `KYC_TEST_STG_${randomBytes(4).toString('hex').toUpperCase()}`;
   let db: OracleSqlExecutor;
   let repo: StagingSubmissionRepository;
@@ -44,11 +41,8 @@ const enabled =
     )[0];
 
   beforeAll(async () => {
-    db = new OracleSqlExecutor({
-      user: process.env.KYC_ORACLE_TEST_USER as string,
-      password: process.env.KYC_ORACLE_TEST_PASSWORD as string,
-      connectString: process.env.KYC_ORACLE_TEST_CONNECT as string,
-    });
+    db = new OracleSqlExecutor(cfg!);
+    await assertDisposableDatabase(db);
     await db.execute(
       `CREATE TABLE ${table} (KYC_REF_NO VARCHAR2(50) NOT NULL, SEQ_NO NUMBER NOT NULL, ` +
         `MSGID VARCHAR2(64), REQUEST CLOB, RESPONSE CLOB, ` +

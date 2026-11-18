@@ -1,0 +1,18 @@
+# DISPOSABLE Oracle for the B3 / B5 tests ONLY. Never point the application or these tests at bank UAT1 / PROD.
+# Bound to the loopback interface, throw-away credentials, no volume (data disappears with the container).
+# Start:  docker compose -f docker/oracle-isolated/compose.yml up -d     (first start takes a few minutes)
+# Stop:   docker compose -f docker/oracle-isolated/compose.yml down
+services:
+  oracle:
+    image: gvenzl/oracle-free:23-slim-faststart
+    ports:
+      - '127.0.0.1:1521:1521'
+    environment:
+      ORACLE_PASSWORD: disposable-admin-only
+      APP_USER: KYC_TEST
+      APP_USER_PASSWORD: disposable-test-only
+    healthcheck:
+      test: ['CMD', 'healthcheck.sh']
+      interval: 10s
+      timeout: 5s
+      retries: 30

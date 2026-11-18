@@ -18,15 +18,22 @@ export class StagingRowNotUpdatedError extends Error {
   }
 }
 
+/** The update names no exact submission (SEQ_NO): refused, there is no "latest revision" fallback. */
+export class StagingRevisionRequiredError extends Error {
+  constructor() {
+    super('A staging status update needs the exact submission (SEQ_NO); none was given');
+    this.name = 'StagingRevisionRequiredError';
+  }
+}
+
 /**
- * Writes the final REIS decision to REIS_FINAL_STATUS of the latest submission (highest SEQ_NO)
- * of the KYC. Idempotent: writing the same status twice succeeds; a different status already
+ * Writes the final REIS decision to REIS_FINAL_STATUS of the EXACT submission (SEQ_NO) the case was sent as, never
+ * of "the latest" one. Idempotent: writing the same status twice succeeds; a different status already
  * stored is never overwritten (0 rows -> StagingRowNotUpdatedError, so the case is FAILED and
  * goes to operator recovery). FLEXCUBE then authorizes, or not, the KYC (Finexta side).
  */
 export class StagingFlexcubeStatusUpdater implements IFlexcubeStatusUpdater {
   private readonly logger = new Logger(StagingFlexcubeStatusUpdater.name);
-  private readonly latestSql: string;
   private readonly exactSql: string;
   private readonly words: DecisionValues;
 
@@ -41,11 +48,6 @@ export class StagingFlexcubeStatusUpdater implements IFlexcubeStatusUpdater {
     // replaces another final decision.
     const replaceable = this.words.pending !== null ? ' OR REIS_FINAL_STATUS = :pendingStatus' : '';
     const guard = `AND (REIS_FINAL_STATUS IS NULL OR REIS_FINAL_STATUS = :finalStatus${replaceable})`;
-    this.latestSql =
-      `UPDATE ${t} SET REIS_FINAL_STATUS = :finalStatus ` +
-      `WHERE KYC_REF_NO = :kycRefNo ` +
-      `AND SEQ_NO = (SELECT MAX(SEQ_NO) FROM ${t} WHERE KYC_REF_NO = :kycRefNo) ` +
-      guard;
     this.exactSql =
       `UPDATE ${t} SET REIS_FINAL_STATUS = :finalStatus ` +
       `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo ` +
@@ -53,15 +55,15 @@ export class StagingFlexcubeStatusUpdater implements IFlexcubeStatusUpdater {
   }
 
   async updateStatus(update: FlexcubeStatusUpdate): Promise<void> {
+    if (!Number.isInteger(update.seqNo)) throw new StagingRevisionRequiredError();
     const status = toStagingFinalStatus(update.finalStatus, this.vocabulary);
-    const exact = update.seqNo !== undefined;
     const binds: Record<string, string | number> = {
       finalStatus: status,
       kycRefNo: update.kycRefNo,
+      seqNo: update.seqNo,
     };
-    if (exact) binds.seqNo = update.seqNo as number;
     if (this.words.pending !== null) binds.pendingStatus = this.words.pending;
-    const { rowsAffected } = await this.db.execute(exact ? this.exactSql : this.latestSql, binds);
+    const { rowsAffected } = await this.db.execute(this.exactSql, binds);
     if (rowsAffected !== 1) throw new StagingRowNotUpdatedError(update.kycRefNo);
     this.logger.log({ event: 'flexcube.staging.finalStatus', status });
   }
