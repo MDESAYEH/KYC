@@ -3,7 +3,7 @@ export class DuplicateKycCaseError extends Error {
     readonly kycRefNo: string,
     readonly reisSystemId: string,
   ) {
-    super(`A KYC case already exists for kycRefNo="${kycRefNo}" or reisSystemId="${reisSystemId}"`);
+    super('A KYC case already exists for this KYC reference or REIS systemId');
     this.name = 'DuplicateKycCaseError';
   }
 }

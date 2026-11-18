@@ -201,7 +201,6 @@ export class KycWorkflow implements IKycWorkflow {
     this.logger.log({
       event: 'kyc.submission.onboarded',
       internalId: updated.internalId,
-      kycRefNo: updated.kycRefNo,
       reisOnboardingStatus: response.status,
       internalRequestStatus: updated.internalRequestStatus,
     });
@@ -255,7 +254,6 @@ export class KycWorkflow implements IKycWorkflow {
     this.logger.warn({
       event: 'kyc.submission.duplicate',
       internalId: kycCase.internalId,
-      kycRefNo: kycCase.kycRefNo,
       reason,
       internalRequestStatus: kycCase.internalRequestStatus,
     });
@@ -318,7 +316,6 @@ export class KycWorkflow implements IKycWorkflow {
     this.logger.warn({
       event: 'kyc.submission.failed',
       internalId: saved?.internalId,
-      kycRefNo: saved?.kycRefNo,
       stage: c.stage,
       code: c.code,
       persistedStatus: c.persist,

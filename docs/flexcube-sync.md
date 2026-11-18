@@ -140,10 +140,43 @@ of an allowed Oracle code, the KYC still open at the same `MOD_NO` since the cut
 integration layer's own database** (the workflow never ran, so REIS was never called by us).
 
 - **Dry run is the default**: only SELECTs on FLEXCUBE and on the local database (opened read-only); prints counts.
+- `--kyc <KYC_REF_NO>` restricts the SELECT and the UPDATE to one KYC. `--apply` refuses to run without an explicit
+  scope: `--kyc <ref>` or `--all`.
 - `--apply` additionally needs `--backup-file <path>` (written first, mode 600, must not exist, keep it out of the
-  repository) and `KYC_RECONCILE_CONFIRM=RESTORE_NEVER_SENT_ROWS`. Each row is restored with one conditional `UPDATE E -> N`
-  that re-checks every condition; a row that changed meanwhile is left alone. It never enables polling and never calls REIS.
-- After a restore the service sends the rows by itself on its next pass, so enable polling only afterwards and on purpose.
+  repository) and `KYC_RECONCILE_CONFIRM=RESTORE_NEVER_SENT_ROWS`. The backup is JSON lines with **every original value**
+  (KYC_REF_NO, SEQ_NO, MSGID, PROCESS_STATUS, RESPONSE, RETRY_COUNT, RES_DATE; REQUEST / REQ_DATE / REIS_FINAL_STATUS
+  are NULL by eligibility). Each row is restored with one conditional `UPDATE E -> N` that re-checks every condition
+  itself: same MSGID, still E with the same marker and no request / claim / final status, and the KYC still open at the
+  same `MOD_NO` since the cut-off. A row or KYC that changed between the SELECT and the UPDATE is left alone.
+- `--rollback <backup>` (dry run; `--apply` with `KYC_RECONCILE_CONFIRM=ROLLBACK_RESTORED_ROWS`) puts the backed-up E
+  values back, only on rows still exactly as the restore left them (a row the sync already claimed is never overwritten).
+- It never enables polling and never calls REIS. After a restore the service sends the rows by itself on its next pass:
+  use the canary (`FLEXCUBE_SYNC_ONLY_KYC_REF_NOS`) to send one KYC first (docs/deployment-uat1.md, section 6).
+
+### Canary: one KYC only (`FLEXCUBE_SYNC_ONLY_KYC_REF_NOS`, off by default)
+
+When set (max 5 references), every pass adds `AND m.KYC_REF_NO IN (:onlyKyc0, ...)` to BOTH the pending and the recovery
+query, and the service skips any other KYC a query might return (`flexcube.sync.outOfCanaryScope`). The journal shows
+`flexcube.sync.canaryMode` with the count only.
+
+### Send guard: uncertain delivery stops all sending
+
+A delivery is uncertain when REIS may have received the request but no result was stored: a REIS timeout / network error /
+5xx after the call (`requestMayHaveReachedReis`), an unexpected error during the submission, a result that could not be
+written to the staging table (row left in progress), or a duplicate whose earlier delivery was uncertain. Then:
+
+- the row is closed as `E` with `"delivery":"UNCERTAIN"` in `RESPONSE` (or stays in progress), and is never resent;
+- the current pass stops and **no further KYC is sent** (`flexcube.sync.haltingAfterUncertainDelivery`);
+- every later pass, also after a restart, first looks for such rows (and for our rows claimed more than 5 minutes ago)
+  and sends nothing while one is unresolved or the check itself fails (`flexcube.sync.sendingHalted`, counts only);
+- an operator reconciles with Vneuron (did REIS receive it?) and then lists the row in
+  `FLEXCUBE_SYNC_UNCERTAIN_ACK=KYC_REF_NO:SEQ_NO`; sending resumes for the others, never for that row.
+
+### Logs
+
+Runtime logs and error messages carry no KYC reference, systemId, customer number or customer data: only run ids,
+internal case ids, steps, codes and counts (enforced by `test/log-hygiene.spec.ts`). The operator CLIs print a KYC
+reference only when the operator passed it (`--kyc`).
 
 ## UAT check diagnostics (`npm run check:uat1`, read-only)
 

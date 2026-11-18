@@ -204,7 +204,10 @@ export function parseBackup(text: string): NeverSentRow[] {
 }
 
 /** Backup file content: a header line, then one JSON line per row with every original value. */
-export function formatBackup(rows: NeverSentRow[], meta: { since: string; codes: string[] }): string {
+export function formatBackup(
+  rows: NeverSentRow[],
+  meta: { since: string; codes: string[] },
+): string {
   const header = JSON.stringify({
     kind: 'header',
     tool: 'reconcile:staging',

@@ -248,9 +248,9 @@ describe('reconciliation of rows closed as E although nothing was sent', () => {
     await expect(
       reconcileNeverSent(deps(), { ...dry, apply: true, confirmation: RECONCILE_CONFIRMATION }),
     ).rejects.toThrow('explicit scope');
-    await expect(
-      reconcileNeverSent(deps(), { ...applyOne, all: true }),
-    ).rejects.toBeInstanceOf(ReconciliationRefusedError);
+    await expect(reconcileNeverSent(deps(), { ...applyOne, all: true })).rejects.toBeInstanceOf(
+      ReconciliationRefusedError,
+    );
     await expect(
       reconcileNeverSent(deps(), { ...applyOne, onlyKycRefNo: "K2' OR '1'='1" }),
     ).rejects.toThrow('not valid');
@@ -289,7 +289,8 @@ describe('reconciliation of rows closed as E although nothing was sent', () => {
   it('the UPDATE re-checks MSGID, MOD_NO, KYC state and cut-off: changes after the SELECT win', async () => {
     const changes: Record<string, () => void> = {
       K1: () => {
-        db.staging.find((r) => r.KYC_REF_NO === 'K1')!.MSGID = '0e8f2a7c-1111-4c2d-9a9a-1234567890ab';
+        db.staging.find((r) => r.KYC_REF_NO === 'K1')!.MSGID =
+          '0e8f2a7c-1111-4c2d-9a9a-1234567890ab';
       },
       K2: () => {
         db.master.find((m) => m.KYC_REF_NO === 'K2')!.MOD_NO = 2; // KYC modified: new MOD_NO
@@ -361,9 +362,7 @@ describe('reconciliation of rows closed as E although nothing was sent', () => {
   });
 
   it('a damaged backup file is refused as a whole', () => {
-    expect(() => parseBackup('{"kycRefNo":"K1","seqNo":1}\n')).toThrow(
-      ReconciliationRefusedError,
-    );
+    expect(() => parseBackup('{"kycRefNo":"K1","seqNo":1}\n')).toThrow(ReconciliationRefusedError);
     expect(() =>
       parseBackup(
         JSON.stringify({

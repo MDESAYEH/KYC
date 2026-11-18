@@ -5,6 +5,7 @@ import {
   StagingProcessStatus,
   StagingSubmissionRepository,
 } from '../src/flexcube/staging/staging-submission.repository';
+import { collectSqlCatalog } from '../src/tools/sql-catalog';
 
 /**
  * REAL Oracle check of the staging SQL (the mocks cannot reveal Oracle SQL errors such as ORA-01745).
@@ -115,5 +116,32 @@ const enabled =
     const err = await strict.claim(key(3)).catch((e: unknown) => e);
     expect(oracleErrorCode(err)).toBe('ORA-02290');
     expect((await status(3)).S).toBe('N'); // the row is untouched
+  });
+
+  it('parse only: describe() reports ORA-01745 for a reserved-word bind and changes nothing', async () => {
+    await repo.insertNew(key(4), 'f47ac10b-58cc-4372-a567-0e02b2c3d479');
+    const err = await db
+      .describe(`UPDATE ${table} SET PROCESS_STATUS = :to WHERE KYC_REF_NO = :kycRefNo`)
+      .catch((e: unknown) => e);
+    expect(oracleErrorCode(err)).toBe('ORA-01745');
+    const info = await db.describe(
+      `UPDATE ${table} SET PROCESS_STATUS = :targetStatus WHERE KYC_REF_NO = :kycRefNo`,
+    );
+    expect(info.bindNames).toEqual(['TARGETSTATUS', 'KYCREFNO']);
+    expect((await status(4)).S).toBe('N'); // nothing was executed
+  });
+
+  it('parse only: every staging statement of the catalog that uses only the staging table', async () => {
+    const catalog = await collectSqlCatalog({
+      stagingTable: table,
+      inProgressStatus: 'W',
+      keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
+    });
+    const own = catalog.filter((e) => e.sql.includes(table) && !e.sql.includes('STTM_KYC_'));
+    expect(own.length).toBeGreaterThan(5);
+    for (const e of own) {
+      const info = await db.describe(e.sql);
+      expect([e.name, [...info.bindNames].sort()]).toEqual([e.name, [...e.bindNames].sort()]);
+    }
   });
 });

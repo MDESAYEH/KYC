@@ -200,8 +200,7 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
             uuid.test(s.MSGID) &&
             ((s.PROCESS_STATUS === b.errorStatus &&
               (s.RESPONSE ?? '').includes(String(b.uncertainMarker))) ||
-              (s.PROCESS_STATUS === b.inProgressStatus &&
-                (s.AGE_MIN ?? 0) > Number(b.ageMinutes))),
+              (s.PROCESS_STATUS === b.inProgressStatus && (s.AGE_MIN ?? 0) > Number(b.ageMinutes))),
         )
         .slice(0, Number(b.maxRows))
         .map((s) => ({ KYC_REF_NO: s.KYC_REF_NO, SEQ_NO: s.SEQ_NO }));

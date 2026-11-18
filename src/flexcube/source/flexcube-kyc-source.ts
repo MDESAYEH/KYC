@@ -44,7 +44,7 @@ const toPendingKyc = (r: SqlRow): PendingKyc => ({
 /** The KYC detail rows could not be found (e.g. deleted or not yet committed). */
 export class KycDetailsNotFoundError extends Error {
   constructor(readonly kycRefNo: string) {
-    super(`KYC details not found for ${kycRefNo}`);
+    super('KYC details not found');
     this.name = 'KycDetailsNotFoundError';
   }
 }
