@@ -1,5 +1,17 @@
 # Single-record trial runbook (KYC 001ZKYC26151003Y, CIF 00005804, SEQ_NO 1 = CIF MOD_NO) — FOR REVIEW, NOT EXECUTED
 
+## First attempt 19/11/2026 11:07 and how to reset it
+
+The send stopped at REIS **authentication** (no onboarding call): `REIS_TIMEOUT_MS=30` (ms) in `.env`, the base URL
+without `/kyc-web-restful`, and TCP 443 from 10.250.100.28 to reiskycuat.aiib.ly (10.250.40.1) blocked by the firewall.
+No `wire.json` was saved, `failure.json` = `{"wire":null,"delivery":"UNCERTAIN"}`. Left: staging SEQ_NO 1 = E with that
+marker, trigger = E, one local case DELIVERY_UNCERTAIN.
+
+Reset (only after the firewall is open and REIS confirmed nothing arrived):
+`node dist/tools/reset-single-kyc-trial.js --evidence-dir <dir>` (dry run), then the same with
+`--confirm RESET_UNDELIVERED_TRIAL --reis-confirmation "<who/when>" --backup-file <new file>`. It refuses unless every
+piece of evidence says nothing reached REIS; then preflight -> approval -> send as before.
+
 ## Update 19/11/2026: Finexta trigger-table flow
 
 - Finexta (Abhilash): from now on (UAT and PROD) a KYC is sent only when its row in `STTM_CUSTOMER_CUSTOM` is

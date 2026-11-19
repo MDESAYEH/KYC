@@ -48,6 +48,8 @@ describe('SQL catalog (every statement sent to FLEXCUBE)', () => {
       'trial.markPicked (trigger U -> P)',
       'trial.release',
       'trial.markTriggerError (trigger P -> E)',
+      'trial.resetUndelivered',
+      'trial.resetTrigger (trigger E -> U)',
       'trial.complete',
     ]) {
       expect(names).toContain(expected);

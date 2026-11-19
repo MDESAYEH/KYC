@@ -26,6 +26,12 @@ export class SingleTrialDb extends FakeFlexcubeDb {
       assertValidBinds(sql, b);
       return this.master.filter((m) => m.KYC_REF_NO === b.kycRefNo && m.RECORD_STAT === 'O');
     }
+    if (sql.startsWith('SELECT READY_TO_SCAN FROM STTM_CUSTOMER_CUSTOM')) {
+      this.statements.push(sql);
+      assertValidBinds(sql, b);
+      const t = this.triggers.find((x) => x.CUSTOMER_NO === b.cif && x.KYC_REF_NO === b.kycRefNo);
+      return t ? [{ READY_TO_SCAN: t.READY_TO_SCAN }] : [];
+    }
     if (sql.includes('SEQ_NO > :seqNo')) {
       this.statements.push(sql);
       assertValidBinds(sql, b);
@@ -48,11 +54,10 @@ export class SingleTrialDb extends FakeFlexcubeDb {
     this.statements.push(sql);
     if (sql.startsWith('UPDATE STTM_CUSTOMER_CUSTOM')) {
       const t = this.trigger(b);
-      const from = sql.includes('SET READY_TO_SCAN = :pickedStatus')
-        ? b.readyStatus
-        : b.pickedStatus;
+      const to = b[/SET READY_TO_SCAN = :(\w+)/.exec(sql)![1]];
+      const from = b[/t\.READY_TO_SCAN = :(\w+)/.exec(sql)![1]];
       if (!t || t.READY_TO_SCAN !== from || !this.cifAt(b)) return { rowsAffected: 0 };
-      t.READY_TO_SCAN = String(b.pickedStatus === from ? b.errorStatus : b.pickedStatus);
+      t.READY_TO_SCAN = String(to);
       return { rowsAffected: 1 };
     }
     const row = this.staging.find(
@@ -63,7 +68,24 @@ export class SingleTrialDb extends FakeFlexcubeDb {
       this.cifAt(b) &&
       this.master.some((m) => m.KYC_REF_NO === b.kycRefNo && m.RECORD_STAT === 'O');
     const triggerIs = (status: unknown) => this.trigger(b)?.READY_TO_SCAN === status;
-    if (sql.includes('RESPONSE = NULL')) {
+    if (sql.includes('REQUEST = NULL')) {
+      // reset of an undelivered attempt: E {"wire":null,...} -> untouched N, trigger must be E
+      if (
+        !versionOpen ||
+        !triggerIs(b.errorStatus) ||
+        row.PROCESS_STATUS !== b.errorStatus ||
+        row.REIS_FINAL_STATUS != null ||
+        row.RETRY_COUNT !== 1 ||
+        row.RESPONSE !== b.expectedResponse
+      )
+        return { rowsAffected: 0 };
+      row.PROCESS_STATUS = String(b.targetStatus);
+      row.REQUEST = null;
+      row.RESPONSE = null;
+      row.RETRY_COUNT = 0;
+      delete row.REQ_DATE;
+      delete row.RES_DATE;
+    } else if (sql.includes('RESPONSE = NULL')) {
       if (
         !versionOpen ||
         !triggerIs(b.readyStatus) ||

@@ -19,6 +19,9 @@ import { assertValidBinds } from '../flexcube/staging/sql-binds';
 export const TRIGGER_TABLE = 'STTM_CUSTOMER_CUSTOM';
 export const TRIGGER = Object.freeze({ ready: 'U', picked: 'P', error: 'E' });
 
+/** RESPONSE the trial writes when the onboarding call threw before any HTTP response was captured. */
+export const UNDELIVERED_RESPONSE = JSON.stringify({ wire: null, delivery: 'UNCERTAIN' });
+
 /** A technical error written before anything reached REIS, e.g. {"error":"ORA-01745"}. */
 const NEVER_SENT_RESPONSE = /^\{"error":"(ORA|NJS|DPI)-\d{3,5}"\}$/;
 
@@ -221,6 +224,62 @@ export class SingleKycTrialRepository {
     );
     if (result.rowsAffected !== 1)
       throw new SingleTrialRefusedError('EXACT_STATUS_UPDATE_NOT_ACKNOWLEDGED');
+  }
+  /**
+   * Undo of a send that NEVER reached REIS's onboarding endpoint (operator tool, after REIS confirmed nothing
+   * arrived): our E row whose RESPONSE is exactly the trial's "no wire, delivery uncertain" marker goes back to
+   * an untouched N under the same MSGID. Conditional on the CIF still at SEQ_NO and the trigger at E.
+   */
+  async resetUndelivered(row: StagingBackupRow): Promise<boolean> {
+    if (
+      row.processStatus !== 'E' ||
+      row.response !== UNDELIVERED_RESPONSE ||
+      row.reisFinalStatus !== null ||
+      row.retryCount !== 1 ||
+      !row.msgId ||
+      !new RegExp(OWN_MSGID_PATTERN, 'i').test(row.msgId)
+    )
+      return false;
+    const binds = {
+      ...this.key(),
+      msgId: row.msgId,
+      cif: TARGET.expectedCif,
+      targetStatus: 'N',
+      errorStatus: 'E',
+      expectedResponse: UNDELIVERED_RESPONSE,
+    };
+    const sql = `UPDATE ${this.table} s SET PROCESS_STATUS = :targetStatus, REQUEST = NULL, RESPONSE = NULL,
+        RETRY_COUNT = 0, REQ_DATE = NULL, RES_DATE = NULL
+      WHERE s.KYC_REF_NO = :kycRefNo AND s.SEQ_NO = :seqNo AND s.MSGID = :msgId
+        AND s.PROCESS_STATUS = :errorStatus AND s.REIS_FINAL_STATUS IS NULL AND s.RETRY_COUNT = 1
+        AND TO_CHAR(SUBSTR(s.RESPONSE, 1, 200)) = :expectedResponse
+        AND ${versionHolds(':cif')}
+        AND ${triggerAt(':errorStatus')}`;
+    assertValidBinds(sql, binds);
+    return (await this.db.execute(sql, binds)).rowsAffected === 1;
+  }
+  /** Trigger E -> U after resetUndelivered, only while the CIF is still at SEQ_NO. */
+  async resetTrigger(): Promise<boolean> {
+    const result = await this.db.execute(
+      `UPDATE ${TRIGGER_TABLE} t SET READY_TO_SCAN = :readyStatus
+      WHERE t.CUSTOMER_NO = :cif AND t.KYC_REF_NO = :kycRefNo AND t.READY_TO_SCAN = :errorStatus
+        AND EXISTS (SELECT 1 FROM STTM_CUSTOMER c WHERE c.CUSTOMER_NO = t.CUSTOMER_NO AND c.MOD_NO = :seqNo)`,
+      {
+        ...this.key(),
+        cif: TARGET.expectedCif,
+        readyStatus: TRIGGER.ready,
+        errorStatus: TRIGGER.error,
+      },
+    );
+    return result.rowsAffected === 1;
+  }
+  /** Read-only: READY_TO_SCAN of the trial's trigger row (null when absent). */
+  async triggerStatus(): Promise<string | null> {
+    const rows = await this.db.query(
+      `SELECT READY_TO_SCAN FROM ${TRIGGER_TABLE} WHERE CUSTOMER_NO = :cif AND KYC_REF_NO = :kycRefNo`,
+      { cif: TARGET.expectedCif, kycRefNo: TARGET.kycRefNo },
+    );
+    return rows.length === 1 ? String(rows[0].READY_TO_SCAN) : null;
   }
   async complete(msgId: string, response: object, success: boolean): Promise<void> {
     const result = await this.db.execute(

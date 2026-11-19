@@ -36,6 +36,13 @@ import {
   SingleTrialPlan,
 } from '../src/tools/single-kyc-trial';
 import { validateTrialSourceSql } from '../src/tools/run-single-kyc-trial';
+import {
+  applyReset,
+  LocalCaseRow,
+  planReset,
+  RESET_CONFIRMATION,
+  ResetDeps,
+} from '../src/tools/single-kyc-trial-reset';
 import { CustomerStatusService } from '../src/webhook/customer-status.service';
 import { TypeOrmWebhookEventRepository } from '../src/persistence/typeorm-webhook-event.repository';
 import { CustomerType } from '../src/canonical';
@@ -542,5 +549,143 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
       'SELECT x FROM x FOR UPDATE',
     ])
       expect(() => validateTrialSourceSql(sql)).toThrow();
+  });
+
+  describe('reset of an attempt that never reached REIS (19/11/2026: authentication timeout)', () => {
+    const failBeforeReis = async () => {
+      deps.reis = {
+        onboard: async () => {
+          throw new Error('authenticate TIMEOUT');
+        },
+      };
+      deps.wireResponse = () => undefined;
+      await expect(send(await planSingleKycTrial(deps))).rejects.toMatchObject({
+        code: 'DELIVERY_UNCERTAIN_NO_RESEND',
+      });
+    };
+    let backups: unknown[];
+    const resetDeps = (over: Partial<ResetDeps> = {}): ResetDeps => ({
+      staging: deps.staging,
+      evidence: { wireSaved: false, failure: { wire: null, delivery: 'UNCERTAIN' } },
+      localCases: async () =>
+        (await ds.query(
+          `SELECT internal_id, kyc_ref_no, reis_system_id, seq_no, internal_request_status,
+                  reis_onboarding_status, final_status, last_error_code FROM kyc_case`,
+        )) as LocalCaseRow[],
+      deleteLocalCase: async (id) => {
+        await ds.query('DELETE FROM kyc_case WHERE internal_id = ?', [id]);
+        return Number((await ds.query('SELECT COUNT(*) AS n FROM kyc_case'))[0].n) === 0;
+      },
+      backup: async (v) => {
+        backups.push(v);
+      },
+      ...over,
+    });
+    const confirm = {
+      confirmation: RESET_CONFIRMATION,
+      reisConfirmation: 'Synthetic REIS: nothing received',
+    };
+    beforeEach(() => {
+      backups = [];
+    });
+
+    it('the failed attempt leaves E + marker, trigger E and a DELIVERY_UNCERTAIN case; no REIS request', async () => {
+      await failBeforeReis();
+      expect(targetRow()).toMatchObject({
+        PROCESS_STATUS: 'E',
+        RESPONSE: '{"wire":null,"delivery":"UNCERTAIN"}',
+        RETRY_COUNT: 1,
+      });
+      expect(db.triggers[0].READY_TO_SCAN).toBe('E');
+      expect(server.requests).toHaveLength(0);
+      expect((await planReset(resetDeps())).refusals).toEqual([]);
+    });
+
+    it('reset puts back N / U / no case, and the normal trial then sends exactly once', async () => {
+      await failBeforeReis();
+      expect(await applyReset(resetDeps(), confirm)).toMatchObject({ reset: true });
+      expect(targetRow()).toMatchObject({
+        PROCESS_STATUS: 'N',
+        REQUEST: null,
+        RESPONSE: null,
+        RETRY_COUNT: 0,
+      });
+      expect(targetRow().REQ_DATE).toBeUndefined();
+      expect(db.triggers[0].READY_TO_SCAN).toBe('U');
+      expect(await deps.hasLocalIdentity()).toBe(false);
+      expect(backups).toHaveLength(1);
+      // a fresh attempt through the normal path (real HTTP to the fake REIS)
+      const transport = new SingleTrialTransport(
+        new HttpService(axios.create()),
+        {
+          baseUrl: server.baseUrl,
+          tenant: 'synthetic',
+          userName: 'synthetic',
+          password: 'synthetic',
+          timeoutMs: 1000,
+          systemName: 'Flexcube',
+        } as ReisConfig,
+        async () => undefined,
+      );
+      deps.reis = new ReisOnboardingClient(
+        new ReisAuthClient(transport, { timeoutMs: 1000 } as ReisConfig),
+        transport,
+      );
+      deps.wireResponse = () => transport.wire;
+      expect(await send(await planSingleKycTrial(deps))).toMatchObject({ sent: 1 });
+      expect(server.requestsTo(path)).toHaveLength(1);
+      expect(targetRow()).toMatchObject({ PROCESS_STATUS: 'S', REIS_FINAL_STATUS: 'CLEAN' });
+    });
+
+    it.each([
+      {
+        label: 'a captured wire (REIS answered)',
+        over: { evidence: { wireSaved: true, failure: { wire: null, delivery: 'UNCERTAIN' } } },
+        code: 'WIRE_RESPONSE_EXISTS_REIS_ANSWERED',
+      },
+      {
+        label: 'other failure evidence',
+        over: {
+          evidence: { wireSaved: false, failure: { wire: { status: 500 }, delivery: 'UNCERTAIN' } },
+        },
+        code: 'FAILURE_EVIDENCE_NOT_UNDELIVERED',
+      },
+    ])('refuses with $label and writes nothing', async ({ over, code }) => {
+      await failBeforeReis();
+      const before = JSON.stringify(db.staging);
+      const writes = db.writes.length;
+      await expect(
+        applyReset(resetDeps(over as Partial<ResetDeps>), confirm),
+      ).rejects.toMatchObject({
+        code: expect.stringContaining(code),
+      });
+      expect(JSON.stringify(db.staging)).toBe(before);
+      expect(db.writes).toHaveLength(writes);
+      expect(backups).toHaveLength(0);
+    });
+
+    it('refuses without the confirmation phrase or the REIS reference', async () => {
+      await failBeforeReis();
+      await expect(
+        applyReset(resetDeps(), { reisConfirmation: 'x'.repeat(20) }),
+      ).rejects.toMatchObject({
+        code: 'CONFIRMATION_REQUIRED',
+      });
+      await expect(
+        applyReset(resetDeps(), { confirmation: RESET_CONFIRMATION, reisConfirmation: 'short' }),
+      ).rejects.toMatchObject({ code: 'REIS_CONFIRMATION_REFERENCE_REQUIRED' });
+    });
+
+    it('refuses when the trigger moved (FCUBS set U again) or nothing failed', async () => {
+      expect((await planReset(resetDeps())).refusals).toEqual(
+        expect.arrayContaining(['STAGING_ROW_NOT_UNDELIVERED_E', 'TRIGGER_NOT_E']),
+      );
+      await failBeforeReis();
+      db.triggers[0].READY_TO_SCAN = 'U';
+      await expect(applyReset(resetDeps(), confirm)).rejects.toMatchObject({
+        code: expect.stringContaining('TRIGGER_NOT_E'),
+      });
+      expect(targetRow().PROCESS_STATUS).toBe('E');
+    });
   });
 });

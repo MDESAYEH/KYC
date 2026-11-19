@@ -24,6 +24,7 @@
     "staging:requeue": "nest build && node dist/tools/reconcile-staging.js",
     "backup:sqlite": "nest build && node dist/tools/backup-sqlite.js",
     "trial:one": "nest build && node dist/tools/run-single-kyc-trial.js",
+    "trial:reset": "nest build && node dist/tools/reset-single-kyc-trial.js",
     "discover:uat1": "node dist/tools/run-readonly-discovery.js",
     "check:oracle-sql": "nest build && node dist/tools/check-oracle-sql.js"
   },

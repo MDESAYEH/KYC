@@ -157,6 +157,14 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
     await step('trial.markPicked (trigger U -> P)', () => trial.markPicked());
     await step('trial.release', () => trial.release(msgId));
     await step('trial.markTriggerError (trigger P -> E)', () => trial.markTriggerError());
+    await step('trial.triggerStatus', () => trial.triggerStatus());
+    await step('trial.resetUndelivered', () =>
+      trial.resetUndelivered({
+        ...backupRow,
+        response: '{"wire":null,"delivery":"UNCERTAIN"}',
+      }),
+    );
+    await step('trial.resetTrigger (trigger E -> U)', () => trial.resetTrigger());
     await step('trial.storeIntent', () => trial.storeIntent(msgId, {}));
     await step('trial.writeWireStatus', () => trial.writeWireStatus('CLEAN', msgId));
     await step('trial.complete', () => trial.complete(msgId, {}, true));
