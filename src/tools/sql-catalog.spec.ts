@@ -26,6 +26,9 @@ describe('SQL catalog (every statement sent to FLEXCUBE)', () => {
       'source.findOwnStuckNew',
       'source.load individual',
       'source.load corporate',
+      'trigger.findReady',
+      'trigger.markPicked',
+      'trigger.markError',
       'staging.insertNew',
       'staging.claim',
       'staging.release',
@@ -39,7 +42,11 @@ describe('SQL catalog (every statement sent to FLEXCUBE)', () => {
       'reconcile.isUntouchedSinceRestore',
       'reconcile.rollbackRestoredRow',
       'updater.finalStatus (approved-blocked)',
+      'trial.restoreNeverSent',
       'trial.claim',
+      'trial.markPicked (trigger U -> P)',
+      'trial.release',
+      'trial.markTriggerError (trigger P -> E)',
       'trial.complete',
     ]) {
       expect(names).toContain(expected);

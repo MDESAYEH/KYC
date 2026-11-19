@@ -37,3 +37,18 @@ says the PENDING / timeout account restriction (no account until a confirmed CLE
 
 Wire the source into the poller behind its own flag (off by default), keep the single-KYC send gate closed, add the
 amendment rule for re-triggered revisions, then a synthetic end-to-end test.
+
+## Answers of 19/11/2026 (Abhilash) and what changed in the code
+
+1. Values: FCUBS writes only `U`; the API writes `P` when it picks a row and `E` when processing fails.
+2. Version: `STTM_CUSTOMER.MOD_NO`, joined by `CUSTOMER_NO`, and it is the staging `SEQ_NO` ("you need to pass CUSTOMER_NO
+   to REIS each time"). A CIF modified without a new KYC revision therefore gets a new `SEQ_NO` and no clash.
+3. Account opening: only `REIS_FINAL_STATUS = 'CLEAN'` allows it.
+4. The UAT test row `00005804` / `001ZKYC26151003Y` was inserted (U). Grants: SELECT / INSERT / UPDATE, synonym in place.
+
+Code: `findReady` returns `seqNo` = CIF `MOD_NO` (and the KYC `MOD_NO` as evidence); `markPicked` and the new `markError`
+are conditional on the trigger status AND on the CIF still being at that `MOD_NO`. The single-KYC trial follows the same
+flow (see `docs/single-kyc-trial-runbook.md`, update 19/11/2026).
+
+Still open: whether the account check reads the highest `SEQ_NO` of the KYC; wiring into the poller (after the trial, with
+the CIF submission workflow that replaces the hold).

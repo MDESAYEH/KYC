@@ -183,14 +183,14 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
   it('preflight performs SELECT only and never authenticates, sends or creates a case', async () => {
     const plan = await planSingleKycTrial(deps);
     expect(plan.plan.request.systemId).toBe('00005804');
-    expect(plan.plan.target.seqNo).toBe(2);
+    expect(plan.plan.target.seqNo).toBe(1); // STTM_CUSTOMER.MOD_NO, not the KYC MOD_NO (2)
     expect(db.writes).toHaveLength(0);
     expect(server.requests).toHaveLength(0);
     expect(saved).toHaveLength(0);
     expect(await deps.hasLocalIdentity()).toBe(false);
   });
   it.each(['CLEAN', 'PENDING'] as const)(
-    'stores the fake server actual raw %s response and changes ONLY MOD_NO=2',
+    'stores the fake server actual raw %s response and changes ONLY the CIF version (SEQ_NO 1)',
     async (status) => {
       server.onboardingHandler = () => ({
         status: 200,
@@ -209,18 +209,26 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
       });
       expect(targetRow()).toMatchObject({
         KYC_REF_NO: TARGET.kycRefNo,
-        SEQ_NO: 2,
+        SEQ_NO: TARGET.seqNo,
         PROCESS_STATUS: 'S',
         REIS_FINAL_STATUS: status,
       });
       expect(JSON.parse(targetRow().RESPONSE!).wire.body).toBe(
         JSON.stringify({ status, extraField: 'retained raw' }),
       );
-      expect(JSON.stringify(db.staging.filter((r) => r.SEQ_NO !== 2))).toBe(baselineRows);
+      expect(
+        JSON.stringify(
+          db.staging.filter(
+            (r) => !(r.KYC_REF_NO === TARGET.kycRefNo && r.SEQ_NO === TARGET.seqNo),
+          ),
+        ),
+      ).toBe(baselineRows);
+      // Finexta trigger: picked (P) once our row was claimed, and stays P after the answer.
+      expect(db.triggers[0].READY_TO_SCAN).toBe('P');
       expect(
         db.writes.every(
           (w) =>
-            w.binds.seqNo === 2 &&
+            w.binds.seqNo === TARGET.seqNo &&
             w.binds.kycRefNo === TARGET.kycRefNo &&
             !w.sql.includes('MAX(SEQ_NO)'),
         ),
@@ -298,13 +306,59 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
     });
     expect(db.writes).toHaveLength(0);
   });
-  it('never restores an existing E row of the target', async () => {
-    db.staging.push({ ...db.staging[0], KYC_REF_NO: TARGET.kycRefNo, SEQ_NO: 2 });
+  const neverSent = (over: Record<string, unknown> = {}) => ({
+    KYC_REF_NO: TARGET.kycRefNo,
+    SEQ_NO: TARGET.seqNo,
+    MSGID: '0b6a1c2e-6b0f-4c55-9a43-1f2d3c4b5a69',
+    PROCESS_STATUS: 'E',
+    REQUEST: null,
+    RESPONSE: '{"error":"ORA-01745"}',
+    RETRY_COUNT: 1,
+    RES_DATE: '2026-11-17T10:00:00',
+    ...over,
+  });
+  it('reuses our own E row that failed before REIS (ORA-01745) under the same MSGID', async () => {
+    db.staging.push(neverSent());
+    const plan = await planSingleKycTrial(deps);
+    expect(plan.plan.original).toMatchObject({ processStatus: 'E', retryCount: 1 });
+    expect(db.writes).toHaveLength(0);
+    expect(await send(plan)).toMatchObject({ sent: 1, statusRecorded: 'CLEAN' });
+    const rows = db.staging.filter(
+      (r) => r.KYC_REF_NO === TARGET.kycRefNo && r.SEQ_NO === TARGET.seqNo,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      MSGID: '0b6a1c2e-6b0f-4c55-9a43-1f2d3c4b5a69',
+      PROCESS_STATUS: 'S',
+      RETRY_COUNT: 0,
+      REIS_FINAL_STATUS: 'CLEAN',
+    });
+    expect(server.requestsTo(path)).toHaveLength(1);
+  });
+  it.each([
+    {
+      label: 'a delivery that may have reached REIS',
+      over: { RESPONSE: '{"error":"X","delivery":"UNCERTAIN"}' },
+    },
+    { label: 'a stored request', over: { REQUEST: '{}' } },
+    { label: 'a second failure', over: { RETRY_COUNT: 2 } },
+    { label: 'a row of another sender', over: { MSGID: 'FCUBS-0001' } },
+    { label: 'a final status', over: { REIS_FINAL_STATUS: 'BLOCKED' } },
+  ])('never reuses an E row with $label', async ({ over }) => {
+    db.staging.push(neverSent(over));
     const original = JSON.stringify(db.staging);
     await expect(planSingleKycTrial(deps)).rejects.toMatchObject({
       code: 'STAGING_NOT_UNTOUCHED_NEW',
     });
     expect(JSON.stringify(db.staging)).toBe(original);
+  });
+  it('does not reuse the E row once FCUBS has moved the trigger or the CIF version', async () => {
+    db.staging.push(neverSent());
+    const plan = await planSingleKycTrial(deps);
+    db.triggers[0].READY_TO_SCAN = 'P';
+    await expect(send(plan)).rejects.toMatchObject({ code: 'RESTORE_NOT_ACQUIRED' });
+    expect(targetRow().PROCESS_STATUS).toBe('E');
+    expect(server.requests).toHaveLength(0);
   });
   it('detects changed payload between review and execution without any write', async () => {
     const plan = await planSingleKycTrial(deps);
@@ -323,13 +377,23 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
       expect(server.requests).toHaveLength(0);
     },
   );
-  it('rejects a concurrent MOD_NO change at the exact claim', async () => {
+  it('rejects a concurrent CIF modification at the exact claim', async () => {
     const plan = await planSingleKycTrial(deps);
     db.beforeWrite = (sql) => {
-      if (sql.includes('REQ_DATE = SYSDATE')) db.master[0].MOD_NO = 3;
+      if (sql.includes('REQ_DATE = SYSDATE')) db.customers[0].MOD_NO = 2;
     };
     await expect(send(plan)).rejects.toMatchObject({ code: 'CLAIM_NOT_ACQUIRED' });
     expect(targetRow().PROCESS_STATUS).toBe('N');
+    expect(db.triggers[0].READY_TO_SCAN).toBe('U');
+    expect(server.requests).toHaveLength(0);
+  });
+  it('a trigger no longer at U after the claim: claim given back, nothing sent', async () => {
+    const plan = await planSingleKycTrial(deps);
+    db.beforeWrite = (sql) => {
+      if (sql.includes('SET READY_TO_SCAN = :pickedStatus')) db.triggers[0].READY_TO_SCAN = 'P';
+    };
+    await expect(send(plan)).rejects.toMatchObject({ code: 'TRIGGER_NOT_READY_OR_CIF_CHANGED' });
+    expect(targetRow()).toMatchObject({ PROCESS_STATUS: 'N', REQUEST: null });
     expect(server.requests).toHaveLength(0);
   });
   it('failed durable backup stops before any Oracle write', async () => {
@@ -399,6 +463,7 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
     });
     expect(targetRow().PROCESS_STATUS).toBe('E');
     expect(targetRow().REIS_FINAL_STATUS).toBeUndefined();
+    expect(db.triggers[0].READY_TO_SCAN).toBe('E'); // Finexta: E when processing failed
     expect(JSON.parse(targetRow().RESPONSE!).wire.status).toBe(reply.status);
     expect(server.requestsTo(path)).toHaveLength(1);
   });
@@ -420,17 +485,20 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
     await expect(planSingleKycTrial(deps)).rejects.toBeDefined();
     expect(server.requestsTo(path)).toHaveLength(1);
   });
-  it("the CIF SELECT adapted from Finexta's answer (docs/finexta-cif-source.sql) passes the guard and selects only the CIF", () => {
+  it('the CIF SELECT (docs/finexta-cif-source.sql): trigger at U, SEQ_NO = CIF MOD_NO, selects only the CIF', () => {
     const sql = validateTrialSourceSql(
       readFileSync(join(__dirname, '..', 'docs', 'finexta-cif-source.sql'), 'utf8'),
     );
     expect(sql).toMatch(/^SELECT C\.CUSTOMER_NO AS CIF_VALUE\s+FROM STTM_CUSTOMER C/);
     expect(sql).not.toContain('C.*');
+    expect(sql).not.toContain('K.MOD_NO');
     for (const cond of [
       "KYC_DETAILS = 'V'",
       "RECORD_STAT = 'O'",
       "AUTH_STAT = 'A'",
-      'K.MOD_NO = :seqNo',
+      'C.MOD_NO = :seqNo',
+      'FROM STTM_CUSTOMER_CUSTOM T',
+      "T.READY_TO_SCAN = 'U'",
     ])
       expect(sql).toContain(cond);
   });

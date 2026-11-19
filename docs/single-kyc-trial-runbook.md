@@ -1,4 +1,24 @@
-# Single-record trial runbook (KYC 001ZKYC26151003Y, MOD_NO 2) — FOR REVIEW, NOT EXECUTED
+# Single-record trial runbook (KYC 001ZKYC26151003Y, CIF 00005804, SEQ_NO 1 = CIF MOD_NO) — FOR REVIEW, NOT EXECUTED
+
+## Update 19/11/2026: Finexta trigger-table flow
+
+- Finexta (Abhilash): from now on (UAT and PROD) a KYC is sent only when its row in `STTM_CUSTOMER_CUSTOM` is
+  `READY_TO_SCAN = 'U'` (FCUBS sets U after the CIF is authorized, and again after a CIF modification). The API sets `P`
+  when it picks the row and `E` when processing fails. **SEQ_NO = `STTM_CUSTOMER.MOD_NO`** (every send carries the CIF).
+- Read on UAT1 (read-only): CIF `00005804` MOD_NO **1**, KYC MOD_NO 2, trigger row `U`. The existing staging row SEQ_NO 1
+  is OUR row (UUID MSGID) that failed with `ORA-01745` at the claim, before anything reached REIS.
+- The trial therefore targets **SEQ_NO 1** and **reuses** that row under its own MSGID (E -> N -> W), but only when it
+  is exactly a never-sent technical error (E, RETRY_COUNT 1, no REQUEST / REQ_DATE / final status, RESPONSE
+  `{"error":"ORA-…"}`), the CIF is still at MOD_NO 1, and the trigger is still `U`. Any other E row is refused.
+- Order of writes: restore (if E) -> claim -> re-read payload -> trigger `U -> P` (if refused: claim given back, nothing
+  sent) -> intent -> REIS. An uncertain / failed delivery also sets the trigger `P -> E`. A success leaves `P`.
+- `docs/finexta-cif-source.sql` now binds `:seqNo` to `STTM_CUSTOMER.MOD_NO` and requires the trigger at `U`.
+- `claimSqlSha256` now covers the three pre-REIS writes (restore, claim, trigger U -> P): the preflight of 19/11 is
+  stale; run preflight again after deploying this change.
+- B4 closed (Abhilash 19/11: the account is authorized only when `REIS_FINAL_STATUS = CLEAN`). B6 closed (Bank, from the
+  start of the project: REIS REJECT -> `BLOCKED`; approval file `rejectToBlockedApproved: true`).
+- Open with Abhilash: does the account check read the row with the highest SEQ_NO for the KYC?
+
 
 Status 17/11/2026: **local preparation only.** Nothing in this document has been run against UAT1 or REIS.
 Update 18/11/2026: build `f641768` deployed on UAT1 with polling off; `check:oracle-sql` parsed 30/30 statements. The
@@ -43,9 +63,9 @@ node dist/tools/run-single-kyc-trial.js --mode send --cif-sql approved-cif-selec
 node dist/tools/run-single-kyc-trial.js --mode verify --report /secure/verify.json
 ```
 
-What step 2 would change: one INSERT + one claim on staging row (KYC 001ZKYC26151003Y, SEQ_NO 2), one local case, **one**
+What step 2 would change: one restore or INSERT + one claim on staging row (KYC 001ZKYC26151003Y, SEQ_NO 1), trigger U -> P, one local case, **one**
 REIS onboarding call with the CIF as `systemId`, the raw response recorded, `PROCESS_STATUS = S` and `REIS_FINAL_STATUS`
-(CLEAN / PENDING, or BLOCKED only if REJECT→BLOCKED was approved) on exactly SEQ_NO 2. No retry, no requeue, no other row.
+(CLEAN / PENDING, or BLOCKED only if REJECT→BLOCKED was approved) on exactly SEQ_NO 1. No retry, no requeue, no other row.
 If the response is lost: `E`/uncertain, **no resend**; a person reconciles with REIS.
 
 ## 4. Blockers (evidence required before any send) — status 18/11/2026

@@ -9,6 +9,7 @@ import {
 } from '../flexcube/staging/staging-submission.repository';
 import { ReisFinalStatus } from '../reis/reis-status';
 import { SingleKycTrialRepository } from './single-kyc-trial.repository';
+import { CustomerTriggerSource, ReadyCustomer } from '../flexcube/source/customer-trigger.source';
 
 /**
  * The exact SQL text of EVERY statement the integration layer can send to FLEXCUBE, collected by
@@ -96,6 +97,20 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   await step('source.load individual', () => source.load(individual));
   await step('source.load corporate', () => source.load(corporate));
 
+  const trigger = new CustomerTriggerSource(rec, opts.stagingTable, since, true);
+  const ready: ReadyCustomer = {
+    customerNo: 'CATALOG',
+    kycRefNo: key.kycRefNo,
+    seqNo: 1,
+    kycModNo: 1,
+    customerType: 'INDIVIDUAL',
+    stagingRows: 0,
+  };
+  await step('trigger.findReady, individuals only', () => trigger.findReady(1));
+  await step('trigger.findReady', () => trigger.findReady(1, true));
+  await step('trigger.markPicked', () => trigger.markPicked(ready));
+  await step('trigger.markError', () => trigger.markError(ready));
+
   const repo = new StagingSubmissionRepository(rec, opts.stagingTable, opts.inProgressStatus);
   await step('staging.insertNew', () => repo.insertNew(key, msgId));
   await step('staging.claim', () => repo.claim(key));
@@ -132,7 +147,11 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   if (!['N', 'E', 'S'].includes(opts.inProgressStatus)) {
     const trial = new SingleKycTrialRepository(rec, opts.stagingTable, opts.inProgressStatus);
     await step('trial.master', () => trial.master());
+    await step('trial.restoreNeverSent', () => trial.restoreNeverSent(backupRow));
     await step('trial.claim', () => trial.claim(msgId));
+    await step('trial.markPicked (trigger U -> P)', () => trial.markPicked());
+    await step('trial.release', () => trial.release(msgId));
+    await step('trial.markTriggerError (trigger P -> E)', () => trial.markTriggerError());
     await step('trial.storeIntent', () => trial.storeIntent(msgId, {}));
     await step('trial.writeWireStatus', () => trial.writeWireStatus('CLEAN', msgId));
     await step('trial.complete', () => trial.complete(msgId, {}, true));

@@ -104,14 +104,23 @@ export async function sendSingleKycTrial(
     throw new SingleTrialRefusedError('PREFLIGHT_STATE_CHANGED');
   await deps.evidence('before', current);
   await deps.assertExecutionAllowed();
-  const msgId = current.plan.original?.msgId ?? randomUUID();
-  if (!current.plan.original && !(await deps.staging.staging.insertNew(deps.staging.key(), msgId)))
+  const original = current.plan.original;
+  const msgId = original?.msgId ?? randomUUID();
+  if (!original && !(await deps.staging.staging.insertNew(deps.staging.key(), msgId)))
     throw new SingleTrialRefusedError('CONCURRENT_STAGING_INSERT');
+  // Our own row that failed technically before REIS (ORA-01745) is the same CIF version: reuse it.
+  if (original?.processStatus === 'E' && !(await deps.staging.restoreNeverSent(original)))
+    throw new SingleTrialRefusedError('RESTORE_NOT_ACQUIRED');
   if (!(await deps.staging.claim(msgId))) throw new SingleTrialRefusedError('CLAIM_NOT_ACQUIRED');
   // The detail loader reads several tables. Detect visible changes before intent or REIS calls.
   const latest = await payload(deps);
   if (trialHash(latest.request) !== trialHash(current.plan.request))
     throw new SingleTrialRefusedError('PAYLOAD_CHANGED_AFTER_CLAIM');
+  // Trigger U -> P only now that our row is durable and claimed; if FCUBS changed it, give the claim back.
+  if (!(await deps.staging.markPicked())) {
+    await deps.staging.release(msgId);
+    throw new SingleTrialRefusedError('TRIGGER_NOT_READY_OR_CIF_CHANGED');
+  }
   const kycCase = await deps.cases.create({
     kycRefNo: TARGET.kycRefNo,
     seqNo: TARGET.seqNo,
@@ -133,6 +142,8 @@ export async function sendSingleKycTrial(
       message: 'Single trial requires operational reconciliation; do not resend',
     });
     await deps.staging.complete(msgId, { wire: wire ?? null, delivery: 'UNCERTAIN' }, false);
+    // Finexta: the API sets E when processing failed. Best effort: the staging row already says why.
+    await deps.staging.markTriggerError().catch(() => false);
     throw new SingleTrialRefusedError('DELIVERY_UNCERTAIN_NO_RESEND');
   }
   const wire = deps.wireResponse();
