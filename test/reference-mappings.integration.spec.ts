@@ -215,7 +215,14 @@ describe('Task 4 - reference lists integration (empty DB -> seed -> REIS V1.4 pa
           "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'migrations' ORDER BY name",
         )) as { name: string }[]
       ).map((t) => t.name);
-      expect(tables).toEqual(['kyc_case', 'reference_mapping', 'webhook_event']);
+      expect(tables).toEqual([
+        'kyc_case',
+        'kyc_resume_attempt',
+        'kyc_resume_event',
+        'kyc_resume_reservation',
+        'reference_mapping',
+        'webhook_event',
+      ]);
       const rows = await mappingRows();
       expect(rows).toHaveLength(414);
       expect(rows.every((r) => r.a === 1 && r.r === r.v)).toBe(true);

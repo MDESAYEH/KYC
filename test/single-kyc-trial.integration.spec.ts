@@ -47,6 +47,7 @@ import { CustomerStatusService } from '../src/webhook/customer-status.service';
 import { TypeOrmWebhookEventRepository } from '../src/persistence/typeorm-webhook-event.repository';
 import { CustomerType } from '../src/canonical';
 import { ReisOnboardingStatus } from '../src/reis/reis-status';
+import { ReisTimeoutError } from '../src/reis/reis.errors';
 
 jest.setTimeout(30_000);
 describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP only', () => {
@@ -97,6 +98,7 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
     jest.restoreAllMocks();
   });
   beforeEach(async () => {
+    server.authHandler = () => ({ status: 200, body: { token: server.nextToken() } });
     await ds.query('DELETE FROM webhook_event');
     await ds.query('DELETE FROM kyc_case');
     db = new SingleTrialDb();
@@ -450,22 +452,15 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
     );
     return { cases, c, updateStatus, service };
   };
-  it('the CIF callback of the trial reaches EXACTLY its revision (SEQ_NO 1), never MAX(SEQ_NO)', async () => {
+  it('the multi-attempt CIF callback is quarantined even though revision_count is one', async () => {
     const { service, updateStatus } = await pendingCase(TARGET.expectedCif);
     expect(
       await service.handle({
         headers: {},
         body: { systemId: TARGET.expectedCif, status: 'CUSTOMER' },
       }),
-    ).toMatchObject({ result: 'APPLIED' });
-    expect(updateStatus).toHaveBeenCalledTimes(1);
-    expect(updateStatus).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kycRefNo: TARGET.kycRefNo,
-        seqNo: TARGET.seqNo,
-        finalStatus: 'CUSTOMER',
-      }),
-    );
+    ).toMatchObject({ result: 'RECONCILIATION_REQUIRED' });
+    expect(updateStatus).not.toHaveBeenCalled();
   });
   it('the old identity (KYC_REF_NO, never sent) stays quarantined on the callback route', async () => {
     const { service, updateStatus, cases, c } = await pendingCase(TARGET.kycRefNo);
@@ -508,6 +503,78 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
     expect(targetRow().REIS_FINAL_STATUS).toBeUndefined();
     await expect(planSingleKycTrial(deps)).rejects.toBeDefined();
     expect(server.requestsTo(path)).toHaveLength(1);
+  });
+  it.each([401, 403])(
+    'authenticate HTTP %s is NOT_SENT; evidence survives and resend is refused',
+    async (status) => {
+      server.authHandler = () => ({ status, body: { message: 'synthetic rejection' } });
+      await expect(send(await planSingleKycTrial(deps))).rejects.toMatchObject({
+        code: 'AUTHENTICATION_FAILED_NO_RESEND',
+      });
+      expect(server.requestsTo(path)).toHaveLength(0);
+      expect(targetRow().PROCESS_STATUS).toBe('E');
+      expect(targetRow().REQUEST).toBeTruthy();
+      expect(JSON.parse(targetRow().RESPONSE!)).toMatchObject({
+        delivery: 'NOT_SENT',
+        stage: 'REIS_AUTHENTICATE',
+        httpStatus: status,
+        requestMayHaveReachedReis: false,
+      });
+      expect(db.triggers[0].READY_TO_SCAN).toBe('E');
+      const c = await deps.cases.findByKycRefNo(TARGET.kycRefNo);
+      expect(c).toMatchObject({
+        internalRequestStatus: 'FAILED_PERMANENT',
+        lastErrorCode: 'REIS_AUTH_REJECTED',
+      });
+      await expect(planSingleKycTrial(deps)).rejects.toBeDefined();
+      expect(saved.some((e) => e.phase === 'failure')).toBe(true);
+      expect(JSON.stringify(saved)).not.toContain('synthetic rejection');
+    },
+  );
+  it('onboarding HTTP 403 remains uncertain in the trial, since onboarding was called', async () => {
+    server.onboardingHandler = () => ({ status: 403, body: {} });
+    await expect(send(await planSingleKycTrial(deps))).rejects.toMatchObject({
+      code: 'DELIVERY_UNCERTAIN_NO_RESEND',
+    });
+    expect(server.requestsTo(path)).toHaveLength(1);
+    expect(JSON.parse(targetRow().RESPONSE!).delivery).toBe('UNCERTAIN');
+  });
+  it('authentication timeout is recorded separately, with no onboarding and no automatic retry', async () => {
+    deps.reis = {
+      onboard: async () => {
+        throw new ReisTimeoutError('authenticate', 30);
+      },
+    };
+    await expect(send(await planSingleKycTrial(deps))).rejects.toMatchObject({
+      code: 'AUTHENTICATION_FAILED_NO_RESEND',
+    });
+    expect(server.requestsTo(path)).toHaveLength(0);
+    expect(JSON.parse(targetRow().RESPONSE!)).toMatchObject({
+      delivery: 'NOT_SENT',
+      code: 'REIS_AUTH_TIMEOUT',
+    });
+    expect(await deps.cases.findByKycRefNo(TARGET.kycRefNo)).toMatchObject({
+      internalRequestStatus: 'FAILED_RETRYABLE',
+    });
+    await expect(planSingleKycTrial(deps)).rejects.toBeDefined();
+  });
+  it('an untyped exception with no captured wire is still uncertain', async () => {
+    deps.reis = {
+      onboard: async () => {
+        throw Error('unknown stage');
+      },
+    };
+    await expect(send(await planSingleKycTrial(deps))).rejects.toMatchObject({
+      code: 'DELIVERY_UNCERTAIN_NO_RESEND',
+    });
+    expect(JSON.parse(targetRow().RESPONSE!).delivery).toBe('UNCERTAIN');
+  });
+  it('success requires reading back the picked trigger too; a mismatch never authorizes resend', async () => {
+    const reviewed = await planSingleKycTrial(deps);
+    jest.spyOn(deps.staging, 'triggerStatus').mockResolvedValue('E');
+    await expect(send(reviewed)).rejects.toMatchObject({ code: 'READBACK_MISMATCH_NO_RESEND' });
+    expect(server.requestsTo(path)).toHaveLength(1);
+    await expect(planSingleKycTrial(deps)).rejects.toBeDefined();
   });
   it('response-recording failure leaves W and protected wire evidence, never a second send', async () => {
     const plan = await planSingleKycTrial(deps);

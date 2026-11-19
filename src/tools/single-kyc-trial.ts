@@ -8,6 +8,8 @@ import { ReisRawResponse } from '../reis/transport/reis-http.transport';
 import { KycRequestStatus } from '../common/kyc-status';
 import { requireCif } from '../reis/cif-identity';
 import { parseJsonBody, parseOnboardingResponse } from '../reis/reis-response.parser';
+import { ReisClientError } from '../reis/reis.errors';
+import { classifyReisFailure } from '../kyc/kyc-failure.classifier';
 import { SingleKycTrialRepository } from './single-kyc-trial.repository';
 import {
   SINGLE_KYC_TRIAL as TARGET,
@@ -135,17 +137,40 @@ export async function sendSingleKycTrial(
   let response;
   try {
     response = await deps.reis.onboard(latest.request, { correlationId: kycCase.internalId });
-  } catch {
+  } catch (error: unknown) {
     const wire = deps.wireResponse();
-    await deps.evidence('failure', { wire: wire ?? null, delivery: 'UNCERTAIN' });
-    await deps.cases.recordDeliveryUncertain(kycCase.internalId, {
-      code: 'SINGLE_TRIAL_DELIVERY_UNCERTAIN',
-      message: 'Single trial requires operational reconciliation; do not resend',
-    });
-    await deps.staging.complete(msgId, { wire: wire ?? null, delivery: 'UNCERTAIN' }, false);
+    // Only a typed authenticate failure AND absence of onboarding wire evidence proves
+    // that this invocation stopped before onboarding. Unknown errors stay conservative.
+    const auth =
+      error instanceof ReisClientError && error.operation === 'authenticate' && !wire
+        ? classifyReisFailure(error)
+        : null;
+    const failure = auth
+      ? {
+          wire: null,
+          delivery: 'NOT_SENT',
+          stage: auth.stage,
+          code: auth.code,
+          httpStatus: (error as { httpStatus?: number }).httpStatus ?? null,
+          requestMayHaveReachedReis: false,
+        }
+      : { wire: wire ?? null, delivery: 'UNCERTAIN' };
+    await deps.evidence('failure', failure);
+    if (auth) {
+      if (auth.persist === KycRequestStatus.FAILED_RETRYABLE)
+        await deps.cases.recordRetryableError(kycCase.internalId, auth);
+      else await deps.cases.recordPermanentError(kycCase.internalId, auth);
+    } else
+      await deps.cases.recordDeliveryUncertain(kycCase.internalId, {
+        code: 'SINGLE_TRIAL_DELIVERY_UNCERTAIN',
+        message: 'Single trial requires operational reconciliation; do not resend',
+      });
+    await deps.staging.complete(msgId, failure, false);
     // Finexta: the API sets E when processing failed. Best effort: the staging row already says why.
     await deps.staging.markTriggerError().catch(() => false);
-    throw new SingleTrialRefusedError('DELIVERY_UNCERTAIN_NO_RESEND');
+    throw new SingleTrialRefusedError(
+      auth ? 'AUTHENTICATION_FAILED_NO_RESEND' : 'DELIVERY_UNCERTAIN_NO_RESEND',
+    );
   }
   const wire = deps.wireResponse();
   // An actual HTTP response is mandatory: no fabricated response/status can be substituted.
@@ -170,15 +195,17 @@ export async function sendSingleKycTrial(
     status = 'BLOCKED';
   if (status) await deps.staging.writeWireStatus(status, msgId);
   const after = await deps.staging.read();
+  const trigger = await deps.staging.triggerStatus();
   if (
     !after ||
     after.msgId !== msgId ||
     after.seqNo !== TARGET.seqNo ||
     after.processStatus !== 'S' ||
-    after.reisFinalStatus !== status
+    after.reisFinalStatus !== status ||
+    trigger !== 'P'
   )
     throw new SingleTrialRefusedError('READBACK_MISMATCH_NO_RESEND');
-  await deps.evidence('after', { after, response, wire });
+  await deps.evidence('after', { after, trigger, response, wire });
   return {
     sent: 1,
     statusRecorded: status,

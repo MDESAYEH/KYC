@@ -1,6 +1,6 @@
 import { DataSource } from 'typeorm';
 import { loadConfiguration } from '../config/configuration';
-import { buildDataSourceOptions } from './database.config';
+import { buildDataSourceOptions, MIGRATIONS } from './database.config';
 import { UnsupportedDatabaseError } from './persistence.errors';
 
 describe('buildDataSourceOptions', () => {
@@ -53,10 +53,11 @@ describe('schema migrations', () => {
       .map((r) => r.name)
       .sort();
 
-  it('creates the schema on a fresh database, matches the entities, and reverts cleanly', async () => {
-    const ds = new DataSource(
-      buildDataSourceOptions({ type: 'sqlite', sqlitePath: ':memory:' }, 'test'),
-    );
+  it('the six legacy migrations create the original schema and revert cleanly', async () => {
+    const ds = new DataSource({
+      ...buildDataSourceOptions({ type: 'sqlite', sqlitePath: ':memory:' }, 'test'),
+      migrations: MIGRATIONS.slice(0, 6),
+    });
     await ds.initialize();
     try {
       expect(await tables(ds)).toEqual([]);
@@ -139,6 +140,38 @@ describe('schema migrations', () => {
       expect(await names()).not.toContain('reis_instruction');
       await ds.undoLastMigration({ transaction: 'all' }); // migration 1
       expect(await tables(ds)).toEqual([]);
+    } finally {
+      await ds.destroy();
+    }
+  });
+
+  it('the current schema retains its permanent resume journal when rollback is requested', async () => {
+    const ds = new DataSource(
+      buildDataSourceOptions({ type: 'sqlite', sqlitePath: ':memory:' }, 'test'),
+    );
+    await ds.initialize();
+    try {
+      await ds.runMigrations({ transaction: 'all' });
+      expect(await tables(ds)).toEqual([
+        'kyc_case',
+        'kyc_resume_attempt',
+        'kyc_resume_event',
+        'kyc_resume_reservation',
+        'reference_mapping',
+        'webhook_event',
+      ]);
+      await ds.query(
+        "INSERT INTO kyc_resume_attempt VALUES ('synthetic','scope','RESUME','{}','synthetic','synthetic')",
+      );
+      await ds.query(
+        "INSERT INTO kyc_resume_reservation VALUES ('scope','synthetic','synthetic','synthetic')",
+      );
+      const before = await ds.query('SELECT * FROM migrations');
+      await expect(ds.undoLastMigration({ transaction: 'all' })).rejects.toThrow(
+        'PRESERVE_RESERVATIONS_AND_EVIDENCE',
+      );
+      expect(await ds.query('SELECT * FROM migrations')).toEqual(before);
+      expect(await ds.query('SELECT * FROM kyc_resume_reservation')).toHaveLength(1);
     } finally {
       await ds.destroy();
     }

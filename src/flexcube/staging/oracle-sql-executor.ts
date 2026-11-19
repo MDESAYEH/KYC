@@ -122,6 +122,42 @@ export class OracleSqlExecutor implements IFlexcubeSqlExecutor, OnModuleDestroy 
     }
   }
 
+  /** All statements share one connection. A lost commit acknowledgement is in-doubt, never retried here. */
+  async transaction<T>(work: (db: IFlexcubeSqlExecutor) => Promise<T>): Promise<T> {
+    const oracle = (await import('oracledb')).default;
+    const conn = await (await this.getPool()).getConnection();
+    const session: IFlexcubeSqlExecutor = {
+      query: async (sql, binds) => {
+        assertValidBinds(sql, binds);
+        const result = await conn.execute<SqlRow>(sql, binds, {
+          autoCommit: false,
+          outFormat: oracle.OUT_FORMAT_OBJECT,
+          fetchTypeHandler: (meta) =>
+            meta.dbType === oracle.DB_TYPE_CLOB || meta.dbType === oracle.DB_TYPE_NCLOB
+              ? { type: oracle.STRING }
+              : undefined,
+        });
+        return result.rows ?? [];
+      },
+      execute: async (sql, binds) => {
+        assertValidBinds(sql, binds);
+        if (!/^\s*(INSERT|UPDATE)\b/i.test(sql)) throw Error('RESUME_TRANSACTION_DML_ONLY');
+        const result = await conn.execute(sql, binds, { autoCommit: false });
+        return { rowsAffected: result.rowsAffected ?? 0 };
+      },
+    };
+    try {
+      const result = await work(session);
+      await conn.commit();
+      return result;
+    } catch (error) {
+      await conn.rollback().catch(() => undefined);
+      throw error;
+    } finally {
+      await conn.close();
+    }
+  }
+
   /**
    * PARSE ONLY: asks Oracle to parse the statement (connection.getStatementInfo) and returns the
    * bind names its parser found, WITHOUT executing it: no row is read, inserted or updated, and

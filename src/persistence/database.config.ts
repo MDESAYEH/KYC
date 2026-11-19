@@ -10,6 +10,7 @@ import { FlexcubeUpdateAttemptTracking1790000000003 } from './migrations/1790000
 import { SubmissionSeqNo1790000000004 } from './migrations/1790000000004-SubmissionSeqNo';
 import { RevisionCount1790000000005 } from './migrations/1790000000005-RevisionCount';
 import { UnsupportedDatabaseError } from './persistence.errors';
+import { ResumeJournal1790000000006 } from './migrations/1790000000006-ResumeJournal';
 
 export const ENTITIES = [KycCaseEntity, ReferenceMappingEntity, WebhookEventEntity];
 export const MIGRATIONS = [
@@ -19,6 +20,7 @@ export const MIGRATIONS = [
   FlexcubeUpdateAttemptTracking1790000000003,
   SubmissionSeqNo1790000000004,
   RevisionCount1790000000005,
+  ResumeJournal1790000000006,
 ];
 
 /**

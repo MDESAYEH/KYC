@@ -1,5 +1,11 @@
 # Single-record trial runbook (KYC 001ZKYC26151003Y, CIF 00005804, SEQ_NO 1 = CIF MOD_NO) — FOR REVIEW, NOT EXECUTED
 
+> Current two-attempt incident: see [the resume review](single-kyc-resume-review.md).
+> The reset instructions below are historical, not the approved recovery for the current E/E record with
+> REQUEST/RESPONSE present. Do not use restoreNeverSent or reset/delete the local case for this incident.
+> No live resend is authorized; documented REIS absence confirmation covering BOTH attempts and a separate
+> explicit execution approval are required. The new resume planner is offline only.
+
 ## First attempt 19/11/2026 11:07 and how to reset it
 
 The send stopped at REIS **authentication** (no onboarding call): `REIS_TIMEOUT_MS=30` (ms) in `.env`, the base URL

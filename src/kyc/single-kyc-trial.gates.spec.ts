@@ -103,9 +103,9 @@ describe('conditions to lift the two single-trial gates (reported, never lifted 
     expect(gates({}, { ...complete(), rejectToBlockedApproved: false }).unmet).toEqual([]);
   });
 
-  it('19/11/2026: the CIF callback route is released (exact revision); only the old, never-sent identity is held', () => {
+  it('the multi-attempt incident holds both identities and keeps the send CLI blocked', () => {
     expect(gates().mayBeLiftedByReviewedChange).toBe(true);
-    expect(singleTrialCallbackIsHeld(SINGLE_KYC_TRIAL.expectedCif)).toBe(false);
+    expect(singleTrialCallbackIsHeld(SINGLE_KYC_TRIAL.expectedCif)).toBe(true);
     expect(singleTrialCallbackIsHeld(SINGLE_KYC_TRIAL.kycRefNo)).toBe(true);
     const cli = readFileSync(join(__dirname, '..', 'tools', 'run-single-kyc-trial.ts'), 'utf8');
     expect(cli).not.toContain('EXACT_REVISION_CALLBACK_ROUTE_NOT_IMPLEMENTED');

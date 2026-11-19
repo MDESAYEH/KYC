@@ -12,11 +12,11 @@ export const SINGLE_KYC_TRIAL = Object.freeze({
 });
 
 /**
- * Only the OLD identity (systemId = KYC_REF_NO) stays quarantined: it was never sent, so a callback under it is
- * unexpected. The CIF identity was released on 19/11/2026 after the review of 9f8b5fc: a callback is applied only
- * when exactly one revision was ever sent under the CIF (kyc_case.revision_count = 1, true for this trial) and the
- * staging update REQUIRES the case's exact SEQ_NO (no MAX(SEQ_NO) fallback), so it can only reach this trial's row.
+ * BOTH identities are held for the two-attempt incident. revision_count=1 does not establish
+ * which attempt produced a callback when the same SEQ_NO was attempted more than once.
+ * Do not route to the latest case or trust caller-supplied attemptId/SEQ_NO extensions.
+ * Only a separately reviewed provider correlation contract may release this quarantine.
  */
 export function singleTrialCallbackIsHeld(systemId: string): boolean {
-  return systemId === SINGLE_KYC_TRIAL.kycRefNo;
+  return systemId === SINGLE_KYC_TRIAL.kycRefNo || systemId === SINGLE_KYC_TRIAL.expectedCif;
 }
