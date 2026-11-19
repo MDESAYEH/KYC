@@ -4,9 +4,9 @@ Read `docs/STATUS.md` first: it is the current state (19/11/2026). Older handoff
 
 ## Boundaries (UAT1 bank server and data)
 
-- Never enable polling (`FLEXCUBE_POLL_ENABLED=true`) until the poller is wired to the trigger table and that change
-  is reviewed and approved by the user.
-- Never send a KYC to REIS outside `npm run trial:one` with a fresh preflight and approval file, and never resend after
+- Polling (`FLEXCUBE_POLL_ENABLED=true`) sends real KYCs from the trigger table: enable or widen
+  `FLEXCUBE_SYNC_CIF_ALLOWLIST` / `FLEXCUBE_SYNC_ALL_CIFS` only when the user asks for it.
+- Outside the poller, send a KYC only with `npm run trial:one` (fresh preflight and approval file); never resend after
   an uncertain delivery. Reset only with `npm run trial:reset` and a written REIS confirmation.
 - Never write `REIS_FINAL_STATUS` by hand, never `DELETE` staging rows, never change FLEXCUBE tables other than the
   staging table and `STTM_CUSTOMER_CUSTOM.READY_TO_SCAN` through the code.

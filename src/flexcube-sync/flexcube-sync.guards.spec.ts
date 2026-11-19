@@ -164,6 +164,8 @@ describe('FlexcubeSyncService guards', () => {
         stagingTable: 'STAGE',
         pollBatchSize: 20,
         syncUncertainAck: [],
+        syncCifAllowlist: [] as string[],
+        syncAllCifs: false,
       } as unknown as AppConfig['flexcube'];
       const make = (ack: string[]) =>
         createFlexcubeSync(db, workflow as unknown as IKycWorkflow, {

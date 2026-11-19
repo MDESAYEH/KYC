@@ -57,6 +57,12 @@ export interface AppConfig {
      * rows whose uncertain delivery an operator reconciled; they no longer stop sending.
      */
     syncUncertainAck: string[];
+    /**
+     * Trigger-table poller rollout (FLEXCUBE_SYNC_CIF_ALLOWLIST, comma separated CIFs): only these CIFs are sent.
+     * Empty = refused at startup unless FLEXCUBE_SYNC_ALL_CIFS=true (every CIF set to U by FCUBS).
+     */
+    syncCifAllowlist: string[];
+    syncAllCifs: boolean;
   };
   /** Production DB is TBD. sqlite (local dev/test only) is the only supported type for now. */
   database: { type: string; sqlitePath: string | undefined };
@@ -103,6 +109,11 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
         .split(',')
         .map((v) => v.trim())
         .filter(Boolean),
+      syncCifAllowlist: (env.FLEXCUBE_SYNC_CIF_ALLOWLIST ?? '')
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean),
+      syncAllCifs: env.FLEXCUBE_SYNC_ALL_CIFS === 'true',
     },
     database: {
       type: env.DB_TYPE ?? 'sqlite',

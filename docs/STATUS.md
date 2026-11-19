@@ -28,9 +28,9 @@
 
 1. Webhook from REIS: firewall 10.250.40.1 → 10.250.100.28:3000 (and the server's local firewall), then a test call
    from REIS with a dummy systemId (integration test planned Monday).
-2. Wire the poller to the trigger table (`CustomerTriggerSource` exists, not wired) and replace the
-   `CifSubmissionHoldWorkflow` with the CIF submission workflow. Rows whose SEQ_NO (old KYC MOD_NO) is above the CIF
-   MOD_NO are not sent (`E`, review). Polling stays `false` until then.
+2. Automatic polling from the trigger table is implemented (`TriggerSyncService`, `CifKycWorkflow`, branch
+   `claude/trigger-polling`). First run: `FLEXCUBE_POLL_ENABLED=true` with `FLEXCUBE_SYNC_CIF_ALLOWLIST` = one new
+   test CIF with a correct account manager; widen afterwards. See [flexcube-sync.md](flexcube-sync.md).
 3. Account manager data in FLEXCUBE (`STTM_KYC_RETAIL_CUSTOM`): many empty, swapped or untrimmed values; needs a list
    / validation in FLEXCUBE and the real account managers for production.
 4. A second test customer that returns PENDING, to test the callback end to end.

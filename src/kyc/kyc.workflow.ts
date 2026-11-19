@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { CustomerType } from '../canonical';
+import { CanonicalKycCustomer, CustomerType } from '../canonical';
+import { ReisOnboardingRequest } from '../reis/dto';
 import { FlexcubeUpdateStatus, KycRequestStatus } from '../common/kyc-status';
 import { FlexcubeCustomerRequest } from '../flexcube/dto/flexcube-customer.request';
 import {
@@ -118,7 +119,7 @@ export class KycWorkflow implements IKycWorkflow {
       const canonical = this.mapper.map(request);
       canonicalType = canonical.customerType;
       customerNo = canonical.customerNo;
-      reisRequest = await this.transformer.transform(canonical);
+      reisRequest = await this.toReisRequest(canonical);
     } catch (error) {
       const classification = classifyPreReisFailure(error);
       if (!classification) throw error; // unexpected: do not hide bugs
@@ -128,8 +129,9 @@ export class KycWorkflow implements IKycWorkflow {
       }
       return this.failBeforeReis(request, kycRefNo, existing, classification);
     }
-    if (reisRequest.systemId !== kycRefNo) {
-      throw new Error('Internal error: REIS systemId must equal KYC_REF_NO');
+    const reisSystemId = this.identityOf(request);
+    if (reisSystemId === null || reisRequest.systemId !== reisSystemId) {
+      throw new Error('Internal error: REIS systemId does not match the submission identity');
     }
 
     // 3. Create (or reopen) the case.
@@ -156,6 +158,7 @@ export class KycWorkflow implements IKycWorkflow {
           customerType: canonicalType,
           customerNo,
           seqNo,
+          reisSystemId,
         });
       } catch (error) {
         if (error instanceof DuplicateKycCaseError) {
@@ -248,6 +251,18 @@ export class KycWorkflow implements IKycWorkflow {
     });
   }
 
+  // ---- identity (overridden by CifKycWorkflow) -------------------------------------------
+
+  /** The REIS request built from the canonical customer. Historical identity: systemId = KYC_REF_NO. */
+  protected toReisRequest(canonical: CanonicalKycCustomer): Promise<ReisOnboardingRequest> {
+    return this.transformer.transform(canonical);
+  }
+
+  /** The REIS systemId of this submission, or null when it cannot be determined. */
+  protected identityOf(request: FlexcubeCustomerRequest): string | null {
+    return typeof request.KYC_REF_NO === 'string' ? request.KYC_REF_NO : null;
+  }
+
   // ---- helpers ---------------------------------------------------------------------------
 
   private duplicate(kycCase: KycCase): SubmissionDuplicate {
@@ -271,9 +286,10 @@ export class KycWorkflow implements IKycWorkflow {
     let kycCase: KycCase | null = existing;
     if (!kycCase) {
       const customerType = this.customerTypeOf(request);
-      if (customerType) {
+      const reisSystemId = this.identityOf(request);
+      if (customerType && reisSystemId !== null) {
         try {
-          kycCase = await this.cases.create({ kycRefNo, customerType });
+          kycCase = await this.cases.create({ kycRefNo, customerType, reisSystemId });
         } catch (error) {
           if (error instanceof DuplicateKycCaseError) {
             const winner = await this.cases.findByKycRefNo(kycRefNo);

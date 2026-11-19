@@ -448,6 +448,8 @@ describe('FLEXCUBE polling configuration and scheduler', () => {
     keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
     finalStatusVocabulary: 'approved-blocked',
     syncUncertainAck: [] as string[],
+    syncCifAllowlist: [] as string[],
+    syncAllCifs: false,
     ...over,
   });
   const wf = {} as IKycWorkflow;

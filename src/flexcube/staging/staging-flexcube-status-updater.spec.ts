@@ -177,6 +177,8 @@ describe('FLEXCUBE updater selection', () => {
     keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
     finalStatusVocabulary: 'approved-blocked',
     syncUncertainAck: [] as string[],
+    syncCifAllowlist: [] as string[],
+    syncAllCifs: false,
     ...over,
   });
   const log = () => ({ warn: jest.fn() });

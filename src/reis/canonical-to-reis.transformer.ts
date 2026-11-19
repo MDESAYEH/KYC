@@ -116,8 +116,9 @@ export class CanonicalToReisTransformer implements ICanonicalToReisTransformer {
       first_name: this.latinName(c.firstName, 'FIRST_NAME'),
       last_name: this.latinName(c.lastName, 'LAST_NAME'),
       cus_birth_date: c.birthDate,
-      account_manager_login: this.text(c.accountManagerLogin, 'ACCOUNT_MANAGER_LOGIN'),
-      account_manager_email: this.text(c.accountManagerEmail, 'ACCOUNT_MANAGER_EMAIL'),
+      // Trimmed: FLEXCUBE stores user input as typed (e.g. "Test001 "); REIS matches the user exactly.
+      account_manager_login: this.text(c.accountManagerLogin, 'ACCOUNT_MANAGER_LOGIN').trim(),
+      account_manager_email: this.text(c.accountManagerEmail, 'ACCOUNT_MANAGER_EMAIL').trim(),
       pep: c.pep,
       relation_pep: c.relationPep,
       nationality_customer: nationality,
@@ -165,8 +166,9 @@ export class CanonicalToReisTransformer implements ICanonicalToReisTransformer {
     const items: ReisCorporateItems = {
       entity_type: 'PM',
       business_name: this.latinName(c.businessName, 'CRP_BUSINESS_NAME'),
-      account_manager_login: this.text(c.accountManagerLogin, 'ACCOUNT_MANAGER_LOGIN'),
-      account_manager_email: this.text(c.accountManagerEmail, 'ACCOUNT_MANAGER_EMAIL'),
+      // Trimmed: FLEXCUBE stores user input as typed (e.g. "Test001 "); REIS matches the user exactly.
+      account_manager_login: this.text(c.accountManagerLogin, 'ACCOUNT_MANAGER_LOGIN').trim(),
+      account_manager_email: this.text(c.accountManagerEmail, 'ACCOUNT_MANAGER_EMAIL').trim(),
       pep: c.pep,
       incorp_country: incorporationCountry,
       // V1.2: corporate nationality is the same value as the country of incorporation.

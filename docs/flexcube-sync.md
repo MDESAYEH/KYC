@@ -4,21 +4,31 @@ Agreed architecture: FLEXCUBE never calls the integration layer. The integration
 FLEXCUBE, calls REIS, and writes the result to the FLEXCUBE staging table. FLEXCUBE (Finexta)
 authorizes the KYC from `REIS_FINAL_STATUS`.
 
-## Flow (one pass every `FLEXCUBE_POLL_INTERVAL_MS`, default 2 minutes)
+## Flow (one pass every `FLEXCUBE_POLL_INTERVAL_MS`, default 2 minutes) — trigger table since 19/11/2026
 
-1. `STTM_KYC_MASTER`: open KYCs (`RECORD_STAT = 'O'`, type R or C, `MAKER_DT_STAMP >= FLEXCUBE_SYNC_START_DATE`)
-   whose `MOD_NO` has no staging row yet. `AUTH_STAT` is NOT filtered: FLEXCUBE no longer blocks
-   KYC authorization (the check moved to account level), so a KYC may already be authorized (`A`)
-   when it is first seen.
-2. Insert `STTM_KYC_REIS_PAYLOAD_CUSTOM` row: `KYC_REF_NO`, `SEQ_NO = MOD_NO`, new `MSGID`,
-   `PROCESS_STATUS = N`, then claim it (`N -> W`, `REQ_DATE = SYSDATE`).
-3. Read the STTM detail tables (mapping V2_5), validate, map, send to REIS (`systemId = KYC_REF_NO`).
-4. `PROCESS_STATUS = S` with `REQUEST` / `RESPONSE` JSON, or `E` (+1 `RETRY_COUNT`, technical
-   error code only in `RESPONSE`); `RES_DATE = SYSDATE` in both cases.
-5. Final decision in `REIS_FINAL_STATUS` (latest `SEQ_NO`):
-   - CLEAN -> `APPROVED`, REJECT -> `BLOCKED`, written at once (Reis sends no webhook);
-   - PENDING -> written when the `/customerStatus` webhook arrives (CUSTOMER -> `APPROVED`).
-   The result is still written to the staging table, but it no longer gates KYC authorization.
+`TriggerSyncService` (wired by `createTriggerSync`), the same path as the single-KYC trial that came back CLEAN:
+
+1. Send guard: nothing is sent while any of our staging rows has an uncertain delivery (or that check fails).
+2. `STTM_CUSTOMER_CUSTOM` rows with `READY_TO_SCAN = U` (FCUBS: CIF created or modified and authorized), joined
+   to `STTM_CUSTOMER` (CIF `MOD_NO` = staging `SEQ_NO`) and the open `STTM_KYC_MASTER` row (cut-off
+   `FLEXCUBE_SYNC_START_DATE`). Only CIFs in `FLEXCUBE_SYNC_CIF_ALLOWLIST` (unless `FLEXCUBE_SYNC_ALL_CIFS=true`).
+3. Refused (trigger `E`, nothing sent): a KYC with a staging row above the CIF `MOD_NO` (FLEXCUBE's account check
+   reads the highest `SEQ_NO`), or a CIF revision already staged and not an untouched `N` row.
+4. Staging row `N` (new `MSGID`) -> claimed `W` -> KYC details read (mapping) -> trigger `U -> P` (only while
+   still `U` and the CIF still at that `MOD_NO`) -> REIS with `systemId = CIF` (`CifKycWorkflow`).
+5. `S` with `REQUEST` / `RESPONSE`; CLEAN -> `CLEAN`, REJECT -> `BLOCKED` in `REIS_FINAL_STATUS` at once; PENDING
+   is finished by the `/customerStatus` callback on the same revision. Any failure: staging `E`, trigger `E`.
+   A database error before REIS releases the claim and leaves the trigger `U` (next pass retries). A possibly
+   delivered request (timeout, reset) stops the pass and all later passes until acknowledged.
+
+Startup refuses polling without the FLEXCUBE database, the cut-off, `FLEXCUBE_FINAL_STATUS_VOCABULARY=
+clean-pending-blocked` and an allow-list (or the explicit all-CIFs switch).
+
+### Legacy KYC_MASTER pass (not wired)
+
+`FlexcubeSyncService` / `createFlexcubeSync` (KYC_MASTER, `SEQ_NO = KYC MOD_NO`, `systemId = KYC_REF_NO`) are kept
+only for their tests and are no longer used by the application. The text below describes them where it mentions
+KYC_MASTER.
 
 An amendment (new `MOD_NO`) is a new `SEQ_NO`; it is sent to REIS with the same `systemId`
 (Reis: treated as an update) once the previous submission is closed.
