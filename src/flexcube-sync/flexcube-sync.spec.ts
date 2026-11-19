@@ -446,7 +446,7 @@ describe('FLEXCUBE polling configuration and scheduler', () => {
     syncStartDate: '2026-11-16' as string | undefined,
     stagingStatusInProgress: 'W',
     keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
-    syncOnlyKycRefNos: [] as string[],
+    finalStatusVocabulary: 'approved-blocked',
     syncUncertainAck: [] as string[],
     ...over,
   });

@@ -6,7 +6,6 @@ import {
   StagingProcessStatus,
   StagingSubmissionRepository,
 } from '../src/flexcube/staging/staging-submission.repository';
-import { collectSqlCatalog } from '../src/tools/sql-catalog';
 
 import { collectSqlCatalog } from '../src/tools/sql-catalog';
 /**
@@ -126,7 +125,7 @@ const cfg = isolatedOracleConfig('KYC_ORACLE_TEST', 'CREATE_AND_DROP_A_TEST_TABL
     expect((await status(4)).S).toBe('N'); // nothing was executed
   });
 
-  it('parse only: every staging statement of the catalog that uses only the staging table', async () => {
+  it('parse only: every catalog statement that uses only the staging table', async () => {
     const catalog = await collectSqlCatalog({
       stagingTable: table,
       inProgressStatus: 'W',

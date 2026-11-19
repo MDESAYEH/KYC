@@ -23,10 +23,6 @@ import {
   stuckNewKycSql,
 } from './flexcube-kyc.queries';
 import { oraCode } from '../oracle-error';
-import { assertSafeKycRefNo } from '../staging/staging-submission.repository';
-
-/** Canary runs are for one or a few named KYCs, never a broad selection. */
-export const MAX_CANARY_KYCS = 5;
 
 /** A saved KYC waiting for REIS; seqNo is the staging SEQ_NO (FLEXCUBE MOD_NO). */
 export interface PendingKyc {
@@ -108,9 +104,6 @@ export class FlexcubeKycSource {
   corporateSupportReason = 'NOT_CHECKED';
 
   private readonly since: string;
-  /** Canary restriction: when set, pending AND recovery only ever return these KYCs. */
-  readonly onlyKycRefNos: readonly string[];
-  private readonly onlyBinds: Record<string, string>;
 
   /** `syncStartDate` is the raw FLEXCUBE_SYNC_START_DATE; an invalid value is rejected here. */
   constructor(
@@ -119,15 +112,7 @@ export class FlexcubeKycSource {
     syncStartDate: string,
     /** Column holding the key-person type (FLEXCUBE_KEYPERSON_TYPE_COLUMN). */
     keypersonTypeColumn: string = DEFAULT_KEYPERSON_TYPE_COLUMN,
-    /** FLEXCUBE_SYNC_ONLY_KYC_REF_NOS (canary). Empty = no restriction (normal operation). */
-    onlyKycRefNos: readonly string[] = [],
   ) {
-    if (onlyKycRefNos.length > MAX_CANARY_KYCS) {
-      throw new Error(`At most ${MAX_CANARY_KYCS} KYCs can be listed for a canary run`);
-    }
-    this.onlyKycRefNos = onlyKycRefNos.map(assertSafeKycRefNo);
-    this.onlyBinds = Object.fromEntries(this.onlyKycRefNos.map((r, i) => [`onlyKyc${i}`, r]));
-    const only = this.onlyKycRefNos.length;
     const since = normalizeSyncStartDate(syncStartDate);
     if (since === undefined) {
       throw new Error('FLEXCUBE_SYNC_START_DATE must be an ISO date or timestamp (YYYY-MM-DD)');
@@ -135,12 +120,12 @@ export class FlexcubeKycSource {
     this.since = since;
     const table = assertSafeTableName(stagingTable);
     this.pendingSql = {
-      corporate: pendingKycSql(table, true, only),
-      individualOnly: pendingKycSql(table, false, only),
+      corporate: pendingKycSql(table, true),
+      individualOnly: pendingKycSql(table, false),
     };
     this.stuckNewSql = {
-      corporate: stuckNewKycSql(table, true, only),
-      individualOnly: stuckNewKycSql(table, false, only),
+      corporate: stuckNewKycSql(table, true),
+      individualOnly: stuckNewKycSql(table, false),
     };
     this.typeColumn = assertSafeColumnName(keypersonTypeColumn);
     this.keypersonsSql = corporateKeypersonsSql(this.typeColumn);
@@ -176,8 +161,8 @@ export class FlexcubeKycSource {
     const sql = this.corporateSupported
       ? this.pendingSql.corporate
       : this.pendingSql.individualOnly;
-    const rows = await this.db.query(sql, { since: this.since, maxRows, ...this.onlyBinds });
-    return rows.map(toPendingKyc).filter((k) => this.inScope(k.kycRefNo));
+    const rows = await this.db.query(sql, { since: this.since, maxRows });
+    return rows.map(toPendingKyc);
   }
 
   /** Our own staging rows left at N (never claimed) by an earlier failed pass, still open. */
@@ -189,14 +174,8 @@ export class FlexcubeKycSource {
       newStatus: 'N',
       since: this.since,
       maxRows,
-      ...this.onlyBinds,
     });
-    return rows.map(toPendingKyc).filter((k) => this.inScope(k.kycRefNo));
-  }
-
-  /** Defence in depth: outside the canary list nothing is ever returned, whatever the SQL did. */
-  inScope(kycRefNo: string): boolean {
-    return this.onlyKycRefNos.length === 0 || this.onlyKycRefNos.includes(kycRefNo);
+    return rows.map(toPendingKyc);
   }
 
   async load(pending: PendingKyc): Promise<FlexcubeCustomerRequest> {

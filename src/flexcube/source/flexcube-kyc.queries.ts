@@ -38,15 +38,6 @@ import { OWN_MSGID_PATTERN } from '../staging/flexcube-staging';
  * is proven to exist (CORPORATE_TYPE_COLUMN_EXISTS_SQL) corporate KYCs are not selected at all.
  */
 
-/**
- * Canary restriction (FLEXCUBE_SYNC_ONLY_KYC_REF_NOS): `onlyCount` placeholders :onlyKyc0..n.
- * Empty when the restriction is off (count 0).
- */
-const onlyKycSql = (onlyCount: number): string =>
-  onlyCount === 0
-    ? ''
-    : `AND m.KYC_REF_NO IN (${Array.from({ length: onlyCount }, (_, i) => `:onlyKyc${i}`).join(', ')})`;
-
 /** KYC types a pass may take: individuals always, corporates only with a proven type column. */
 const typesSql = (corporate: boolean): string => (corporate ? "('R', 'C')" : "('R')");
 
@@ -64,13 +55,12 @@ export const CORPORATE_TYPE_COLUMN_EXISTS_SQL = `
  * Open KYCs created on / after the cut-off (:since, 'YYYY-MM-DDTHH24:MI:SS') whose current
  * modification has no staging row yet. AUTH_STAT is deliberately not filtered.
  */
-export const pendingKycSql = (stagingTable: string, corporate = true, onlyCount = 0): string =>
+export const pendingKycSql = (stagingTable: string, corporate = true): string =>
   `SELECT m.KYC_REF_NO, m.KYC_CUST_TYPE, m.MOD_NO
      FROM STTM_KYC_MASTER m
     WHERE m.RECORD_STAT = 'O'
       AND m.KYC_CUST_TYPE IN ${typesSql(corporate)}
       AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS')
-      ${onlyKycSql(onlyCount)}
       AND NOT EXISTS (SELECT 1 FROM ${stagingTable} s
                        WHERE s.KYC_REF_NO = m.KYC_REF_NO AND s.SEQ_NO = m.MOD_NO)
     ORDER BY m.KYC_REF_NO
@@ -81,7 +71,7 @@ export const pendingKycSql = (stagingTable: string, corporate = true, onlyCount 
  * whose KYC is still open since the cut-off: same rules as pendingKycSql, same current MOD_NO.
  * Rows that are not ours (any other MSGID, e.g. a Finexta test row) never match.
  */
-export const stuckNewKycSql = (stagingTable: string, corporate = true, onlyCount = 0): string =>
+export const stuckNewKycSql = (stagingTable: string, corporate = true): string =>
   `SELECT m.KYC_REF_NO, m.KYC_CUST_TYPE, m.MOD_NO
      FROM STTM_KYC_MASTER m
      JOIN ${stagingTable} s ON s.KYC_REF_NO = m.KYC_REF_NO AND s.SEQ_NO = m.MOD_NO
@@ -92,7 +82,6 @@ export const stuckNewKycSql = (stagingTable: string, corporate = true, onlyCount
       AND m.RECORD_STAT = 'O'
       AND m.KYC_CUST_TYPE IN ${typesSql(corporate)}
       AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS')
-      ${onlyKycSql(onlyCount)}
     ORDER BY m.KYC_REF_NO
     FETCH FIRST :maxRows ROWS ONLY`;
 

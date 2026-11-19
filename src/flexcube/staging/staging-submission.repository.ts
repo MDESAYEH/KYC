@@ -54,42 +54,6 @@ export interface StagingKey {
 export const DELIVERY_UNCERTAIN_MARKER = '"delivery":"UNCERTAIN"';
 
 /**
- * A staging row closed as E by a technical failure, with every value a rollback needs (the
- * reconciliation backup keeps all of them, not only the keys). Dates are database-local text
- * YYYY-MM-DDTHH:MM:SS (or null). REQUEST, REQ_DATE and REIS_FINAL_STATUS are always NULL for
- * these rows (part of the eligibility proof), so they are recorded as such.
- */
-export interface NeverSentRow extends StagingKey {
-  msgId: string;
-  processStatus: string;
-  response: string;
-  retryCount: number;
-  resDate: string | null;
-  reqDate: null;
-  request: null;
-  reisFinalStatus: null;
-}
-
-/** Marker stored in RESPONSE when REIS may have received a request whose outcome is unknown. */
-export const DELIVERY_UNCERTAIN_MARKER = '"delivery":"UNCERTAIN"';
-
-/** KYC_REF_NO as accepted on the command line / in the canary list: FLEXCUBE reference shape. */
-export function assertSafeKycRefNo(value: string): string {
-  if (!/^[A-Z0-9]{1,35}$/.test(value)) {
-    throw new Error('A KYC_REF_NO must be 1-35 upper-case letters or digits');
-  }
-  return value;
-}
-
-const DB_DATE_FORMAT = `'YYYY-MM-DD"T"HH24:MI:SS'`;
-
-/** The KYC of a staging row must still be open at the same MOD_NO since the cut-off. */
-const openKycSince = (alias: string): string =>
-  `EXISTS (SELECT 1 FROM STTM_KYC_MASTER m WHERE m.KYC_REF_NO = ${alias}.KYC_REF_NO ` +
-  `AND m.MOD_NO = ${alias}.SEQ_NO AND m.RECORD_STAT = 'O' AND m.KYC_CUST_TYPE IN ('R', 'C') ` +
-  `AND m.MAKER_DT_STAMP >= TO_DATE(:since, ${DB_DATE_FORMAT}))`;
-
-/**
  * Submission lifecycle in STTM_KYC_REIS_PAYLOAD_CUSTOM (one row per KYC_REF_NO + SEQ_NO):
  *   insertNew  -> N   (row created by the integration layer when a saved KYC is detected)
  *   claim      -> W   (only from N: exactly one worker sends the submission; REQ_DATE = now)
@@ -217,8 +181,8 @@ export class StagingSubmissionRepository {
    * The ONE eligibility predicate of the reconciliation, used by the SELECT and, unchanged, by the
    * UPDATE, so a row that lost any condition between the two is left alone: ours (UUID MSGID), E,
    * RETRY_COUNT 1, no REQUEST, no REQ_DATE, no REIS_FINAL_STATUS, RESPONSE exactly the technical
-   * marker of an allowed Oracle code, and its KYC still open at the same MOD_NO of a supported type,
-   * created since the cut-off.
+   * marker of an allowed Oracle code, and its KYC still open at the same MOD_NO, of a supported type,
+   * created since the cut-off. The staging table is aliased s.
    */
   private neverSentPredicate(responsePlaceholders: string): string {
     return (
@@ -237,8 +201,7 @@ export class StagingSubmissionRepository {
     since: string,
     errorCodes: string[],
     maxRows: number,
-    onlyKycRefNo?: string,
-  ): Promise<NeverSentRow[]> {
+  ): Promise<StagingKey[]> {
     const binds: Record<string, string | number> = {
       errorStatus: StagingProcessStatus.ERROR,
       since,
@@ -248,36 +211,22 @@ export class StagingSubmissionRepository {
       binds[`expectedResponse${i}`] = technicalErrorResponse(code);
       return `:expectedResponse${i}`;
     });
-    let only = '';
-    if (onlyKycRefNo !== undefined) {
-      binds.onlyKycRefNo = assertSafeKycRefNo(onlyKycRefNo);
-      only = 'AND s.KYC_REF_NO = :onlyKycRefNo ';
-    }
     const rows = await this.db.query(
       `SELECT s.KYC_REF_NO, s.SEQ_NO FROM ${this.table} s ` +
         `WHERE ${this.neverSentPredicate(placeholders.join(', '))} ` +
         `ORDER BY s.KYC_REF_NO FETCH FIRST :maxRows ROWS ONLY`,
       binds,
     );
-    return rows.map((r) => ({
-      kycRefNo: String(r.KYC_REF_NO),
-      seqNo: Number(r.SEQ_NO),
-      msgId: String(r.MSGID),
-      processStatus: String(r.PROCESS_STATUS),
-      response: String(r.RESPONSE_TEXT),
-      retryCount: Number(r.RETRY_COUNT),
-      resDate: r.RES_DATE_TEXT == null ? null : String(r.RES_DATE_TEXT),
-      reqDate: null,
-      request: null,
-      reisFinalStatus: null,
-    }));
+    return rows.map((r) => ({ kycRefNo: String(r.KYC_REF_NO), seqNo: Number(r.SEQ_NO) }));
   }
 
   /**
-   * E -> N for ONE row. The WHERE clause repeats the WHOLE eligibility predicate and the exact MSGID
-   * and RES_DATE saved in the backup, so a row replaced or changed after selection is not touched.
-   * RESPONSE, RETRY_COUNT and RES_DATE are reset. This is called only after evidence checks and a
-   * verified backup.
+   * E -> N for ONE row. The WHERE clause repeats the WHOLE eligibility predicate (ownership of the
+   * MSGID, status, counters, empty request, KYC open at the same MOD_NO of a supported type since the
+   * cut-off, exact RESPONSE marker) and the exact MSGID the backup recorded, so a row that changed
+   * (or was replaced) after it was selected is not touched.
+   * RESPONSE, RETRY_COUNT and RES_DATE are reset. Called ONLY by the reconciliation tool, after the
+   * evidence checks and a verified backup.
    */
   async restoreNeverSent(
     key: StagingKey,
@@ -306,11 +255,6 @@ export class StagingSubmissionRepository {
     );
     return rowsAffected === 1;
   }
-        since,
-      },
-    );
-    return rowsAffected === 1;
-  }
 
   /** The columns the rollback needs, as they are right now (read-only, one row). */
   async readRowForBackup(key: StagingKey): Promise<StagingBackupRow | null> {
@@ -331,12 +275,58 @@ export class StagingSubmissionRepository {
       processStatus: text(r.PROCESS_STATUS),
       request: text(r.REQUEST),
       response: text(r.RESPONSE),
-      retryCount: r.RETRY_COUNT === null || r.RETRY_COUNT === undefined ? null : Number(r.RETRY_COUNT),
+      retryCount:
+        r.RETRY_COUNT === null || r.RETRY_COUNT === undefined ? null : Number(r.RETRY_COUNT),
       reqDate: text(r.REQ_DATE_ISO),
       resDate: text(r.RES_DATE_ISO),
       reisFinalStatus: text(r.REIS_FINAL_STATUS),
     };
   }
+
+  /**
+   * State a reconciled row is in right after the restore (and still is if nothing happened since):
+   * N, ours, no request / response / dates / final status, RETRY_COUNT 0. The predicate shared by the
+   * rollback check and the rollback UPDATE.
+   */
+  private restoredStatePredicate(): string {
+    return (
+      `KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND MSGID = :msgId ` +
+      `AND PROCESS_STATUS = :currentStatus AND REQUEST IS NULL AND RESPONSE IS NULL ` +
+      `AND REQ_DATE IS NULL AND RES_DATE IS NULL AND REIS_FINAL_STATUS IS NULL AND RETRY_COUNT = 0`
+    );
+  }
+
+  private restoredStateBinds(row: StagingBackupRow) {
+    return {
+      kycRefNo: row.kycRefNo,
+      seqNo: row.seqNo,
+      msgId: row.msgId ?? '',
+      currentStatus: StagingProcessStatus.NEW,
+    };
+  }
+
+  /** Is the row still exactly in the state the reconciliation left it in? (read-only) */
+  async isUntouchedSinceRestore(row: StagingBackupRow): Promise<boolean> {
+    const rows = await this.db.query(
+      `SELECT COUNT(*) AS N FROM ${this.table} WHERE ${this.restoredStatePredicate()}`,
+      this.restoredStateBinds(row),
+    );
+    return Number(rows[0]?.N) === 1;
+  }
+
+  /**
+   * Rollback of ONE reconciled row to the values saved in the backup (E, original RESPONSE, RETRY_COUNT
+   * and RES_DATE). Only while the row is still exactly in the post-restore state: if the service has
+   * claimed or sent it since, it is left alone (a person must decide).
+   */
+  async rollbackRestoredRow(row: StagingBackupRow): Promise<boolean> {
+    const { rowsAffected } = await this.db.execute(
+      `UPDATE ${this.table} SET PROCESS_STATUS = :originalStatus, RESPONSE = :originalResponse, ` +
+        `RETRY_COUNT = :originalRetryCount, ` +
+        `RES_DATE = TO_DATE(:originalResDate, 'YYYY-MM-DD"T"HH24:MI:SS') ` +
+        `WHERE ${this.restoredStatePredicate()}`,
+      {
+        ...this.restoredStateBinds(row),
         originalStatus: row.processStatus,
         originalResponse: row.response,
         originalRetryCount: row.retryCount,
@@ -348,7 +338,8 @@ export class StagingSubmissionRepository {
 
   /**
    * Our rows whose delivery to REIS is not known (send guard of the polling service): E rows marked
-   * {"delivery":"UNCERTAIN"} and rows claimed for more than `minutes`.
+   * {"delivery":"UNCERTAIN"} and rows claimed for more than `minutes` (a pass died after the claim,
+   * possibly after the REIS call). While any is unresolved, the sync sends nothing. Read-only.
    */
   async findDeliveryRisk(minutes: number, maxRows: number): Promise<StagingKey[]> {
     const rows = await this.db.query(

@@ -199,7 +199,6 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
       const uuid = new RegExp(OWN_MSGID_PATTERN, 'i');
       return this.master
         .filter((m) => this.typeAllowed(sql, m.KYC_CUST_TYPE))
-        .filter((m) => this.onlyAllowed(b, m.KYC_REF_NO))
         .filter((m) => (m.RECORD_STAT ?? 'O') === 'O')
         .filter((m) => (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= String(b.since))
         .filter((m) =>
@@ -230,7 +229,6 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
       this.pendingCalls.push({ sql, binds: b });
       return this.master
         .filter((m) => this.typeAllowed(sql, m.KYC_CUST_TYPE))
-        .filter((m) => this.onlyAllowed(b, m.KYC_REF_NO))
         .filter((m) => (m.RECORD_STAT ?? 'O') === 'O')
         .filter((m) => (m.MAKER_DT_STAMP ?? '2026-12-01T00:00:00') >= String(b.since))
         .filter(
@@ -274,6 +272,18 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
       )
     );
   }
+
+  /** Mirror of StagingSubmissionRepository.restoredStatePredicate. */
+  private restoredState(r: StagingRow, b: SqlBinds): boolean {
+    return (
+      r.MSGID === b.msgId &&
+      r.PROCESS_STATUS === b.currentStatus &&
+      r.REQUEST === null &&
+      r.RESPONSE === null &&
+      r.REQ_DATE === undefined &&
+      r.RES_DATE === undefined &&
+      (r.REIS_FINAL_STATUS ?? null) === null &&
+      r.RETRY_COUNT === 0
     );
   }
 
