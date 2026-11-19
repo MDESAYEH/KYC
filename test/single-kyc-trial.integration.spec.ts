@@ -664,6 +664,75 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
       expect(backups).toHaveLength(0);
     });
 
+    describe('REIS rejected the onboarding with a validation error (HTTP 400, 19/11/2026 14:14)', () => {
+      const rejection = {
+        status: 'BAD_REQUEST',
+        timestamp: '19-11-2026 02:12:49',
+        message:
+          'Validation failed for field: account_manager_email Field customerIdentification1.cols1_6.account_manager_email has an invalid value\n',
+      };
+      const rejectOnce = async (body: unknown = rejection, status = 400) => {
+        server.onboardingHandler = () => ({ status, body });
+        await expect(send(await planSingleKycTrial(deps))).rejects.toMatchObject({
+          code: 'DELIVERY_UNCERTAIN_NO_RESEND',
+        });
+        const phase = (p: string) => saved.find((e) => e.phase === p)?.value;
+        return { wireSaved: true, wire: phase('wire'), failure: phase('failure') };
+      };
+
+      it('plans a reset of kind REJECTED_BY_REIS_VALIDATION naming the field, then sends again once', async () => {
+        const evidence = await rejectOnce();
+        const plan = await planReset(resetDeps({ evidence }));
+        expect(plan).toMatchObject({
+          kind: 'REJECTED_BY_REIS_VALIDATION',
+          rejectedField: 'account_manager_email',
+          refusals: [],
+        });
+        expect(await applyReset(resetDeps({ evidence }), confirm)).toMatchObject({
+          reset: true,
+          kind: 'REJECTED_BY_REIS_VALIDATION',
+        });
+        expect(targetRow()).toMatchObject({ PROCESS_STATUS: 'N', REQUEST: null, RESPONSE: null });
+        expect(db.triggers[0].READY_TO_SCAN).toBe('U');
+        server.onboardingHandler = () => ({ status: 200, body: { status: 'CLEAN' } });
+        saved.length = 0;
+        expect(await send(await planSingleKycTrial(deps))).toMatchObject({ sent: 1 });
+        expect(server.requestsTo(path)).toHaveLength(2); // the rejected one and the new one
+      });
+
+      it.each([
+        ['a 500', { status: 'ERROR', message: 'Validation failed for field: x' }, 500],
+        [
+          'a 400 that is not a validation error',
+          { status: 'BAD_REQUEST', message: 'Something else' },
+          400,
+        ],
+        ['a 400 with a non-JSON body', 'plain text', 400],
+      ])('refuses %s', async (_label, body, status) => {
+        const evidence = await rejectOnce(body, status as number);
+        const writes = db.writes.length;
+        await expect(applyReset(resetDeps({ evidence }), confirm)).rejects.toMatchObject({
+          code: expect.stringContaining('WIRE_RESPONSE_EXISTS_REIS_ANSWERED'),
+        });
+        expect(db.writes).toHaveLength(writes);
+        expect(targetRow().PROCESS_STATUS).toBe('E');
+      });
+
+      it('refuses when the row or failure.json no longer match the captured wire', async () => {
+        const evidence = await rejectOnce();
+        const other = {
+          ...(evidence.wire as object),
+          body: JSON.stringify({ ...rejection, timestamp: 'x' }),
+        };
+        await expect(
+          applyReset(resetDeps({ evidence: { ...evidence, wire: other } }), confirm),
+        ).rejects.toMatchObject({
+          code: expect.stringContaining('FAILURE_EVIDENCE_DOES_NOT_MATCH_WIRE'),
+        });
+        expect(targetRow().PROCESS_STATUS).toBe('E');
+      });
+    });
+
     it('refuses without the confirmation phrase or the REIS reference', async () => {
       await failBeforeReis();
       await expect(
@@ -678,7 +747,7 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
 
     it('refuses when the trigger moved (FCUBS set U again) or nothing failed', async () => {
       expect((await planReset(resetDeps())).refusals).toEqual(
-        expect.arrayContaining(['STAGING_ROW_NOT_UNDELIVERED_E', 'TRIGGER_NOT_E']),
+        expect.arrayContaining(['STAGING_ROW_NOT_THE_FAILED_ATTEMPT', 'TRIGGER_NOT_E']),
       );
       await failBeforeReis();
       db.triggers[0].READY_TO_SCAN = 'U';

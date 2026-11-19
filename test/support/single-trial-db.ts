@@ -76,7 +76,8 @@ export class SingleTrialDb extends FakeFlexcubeDb {
         row.PROCESS_STATUS !== b.errorStatus ||
         row.REIS_FINAL_STATUS != null ||
         row.RETRY_COUNT !== 1 ||
-        row.RESPONSE !== b.expectedResponse
+        String(row.RESPONSE).length !== b.expectedLength ||
+        String(row.RESPONSE).slice(0, 200) !== b.expectedPrefix
       )
         return { rowsAffected: 0 };
       row.PROCESS_STATUS = String(b.targetStatus);

@@ -230,29 +230,36 @@ export class SingleKycTrialRepository {
    * arrived): our E row whose RESPONSE is exactly the trial's "no wire, delivery uncertain" marker goes back to
    * an untouched N under the same MSGID. Conditional on the CIF still at SEQ_NO and the trigger at E.
    */
-  async resetUndelivered(row: StagingBackupRow): Promise<boolean> {
+  async resetUndelivered(
+    row: StagingBackupRow,
+    expectedResponse: string = UNDELIVERED_RESPONSE,
+  ): Promise<boolean> {
     if (
       row.processStatus !== 'E' ||
-      row.response !== UNDELIVERED_RESPONSE ||
+      row.response !== expectedResponse ||
       row.reisFinalStatus !== null ||
       row.retryCount !== 1 ||
       !row.msgId ||
       !new RegExp(OWN_MSGID_PATTERN, 'i').test(row.msgId)
     )
       return false;
+    // RESPONSE is a CLOB: its exact length plus its first 200 characters (the caller already compared the
+    // whole value it read) make sure the row did not change between that read and this UPDATE.
     const binds = {
       ...this.key(),
       msgId: row.msgId,
       cif: TARGET.expectedCif,
       targetStatus: 'N',
       errorStatus: 'E',
-      expectedResponse: UNDELIVERED_RESPONSE,
+      expectedPrefix: expectedResponse.slice(0, 200),
+      expectedLength: expectedResponse.length,
     };
     const sql = `UPDATE ${this.table} s SET PROCESS_STATUS = :targetStatus, REQUEST = NULL, RESPONSE = NULL,
         RETRY_COUNT = 0, REQ_DATE = NULL, RES_DATE = NULL
       WHERE s.KYC_REF_NO = :kycRefNo AND s.SEQ_NO = :seqNo AND s.MSGID = :msgId
         AND s.PROCESS_STATUS = :errorStatus AND s.REIS_FINAL_STATUS IS NULL AND s.RETRY_COUNT = 1
-        AND TO_CHAR(SUBSTR(s.RESPONSE, 1, 200)) = :expectedResponse
+        AND DBMS_LOB.GETLENGTH(s.RESPONSE) = :expectedLength
+        AND TO_CHAR(SUBSTR(s.RESPONSE, 1, 200)) = :expectedPrefix
         AND ${versionHolds(':cif')}
         AND ${triggerAt(':errorStatus')}`;
     assertValidBinds(sql, binds);

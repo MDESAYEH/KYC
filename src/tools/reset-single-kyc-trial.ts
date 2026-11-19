@@ -28,9 +28,11 @@ async function main() {
   if (!evidenceDir || !existsSync(join(evidenceDir, 'before.json')))
     throw new SingleTrialRefusedError('EVIDENCE_DIR_OF_THE_ATTEMPT_REQUIRED');
   const failurePath = join(evidenceDir, 'failure.json');
+  const wirePath = join(evidenceDir, 'wire.json');
   const evidence = {
-    wireSaved: existsSync(join(evidenceDir, 'wire.json')),
+    wireSaved: existsSync(wirePath),
     failure: existsSync(failurePath) ? JSON.parse(readFileSync(failurePath, 'utf8')) : null,
+    wire: existsSync(wirePath) ? JSON.parse(readFileSync(wirePath, 'utf8')) : undefined,
   };
   const apply = arg('--confirm') !== undefined;
   const backupFile = arg('--backup-file');
@@ -88,8 +90,10 @@ async function main() {
       console.log(
         JSON.stringify({
           mode: 'dry-run',
+          kind: plan.kind,
+          rejectedField: plan.rejectedField,
           rowStatus: plan.row?.processStatus ?? null,
-          rowResponse: plan.row?.response ?? null,
+          rowResponseMatchesEvidence: plan.row?.response === plan.expectedResponse,
           trigger: plan.trigger,
           localCases: plan.cases.map((c) => c.internal_request_status),
           wireSaved: evidence.wireSaved,

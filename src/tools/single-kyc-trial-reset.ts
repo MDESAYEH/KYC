@@ -3,8 +3,8 @@ import { SingleKycTrialRepository, UNDELIVERED_RESPONSE } from './single-kyc-tri
 import { StagingBackupRow } from '../flexcube/staging/staging-submission.repository';
 
 /**
- * Undo of a single-KYC trial send that NEVER reached REIS's onboarding endpoint (for example the 19/11/2026
- * attempt that stopped at authentication: REIS unreachable). It puts back exactly the state before the send so
+ * Undo of a single-KYC trial send that REIS never accepted: it never reached the onboarding endpoint (firewall,
+ * authentication), or REIS rejected it with a validation error (HTTP 400) - see ResetKind. It puts back exactly the state before the send so
  * the normal preflight -> approval -> send can run again:
  *   staging row E {"wire":null,"delivery":"UNCERTAIN"} -> untouched N (same MSGID), trigger E -> U,
  *   the local case created by the attempt (DELIVERY_UNCERTAIN, no REIS result) is removed.
@@ -29,8 +29,8 @@ export interface LocalCaseRow {
 
 export interface ResetDeps {
   staging: SingleKycTrialRepository;
-  /** From the attempt's evidence directory. */
-  evidence: { wireSaved: boolean; failure: unknown };
+  /** From the attempt's evidence directory (wire = content of wire.json when it exists). */
+  evidence: { wireSaved: boolean; failure: unknown; wire?: unknown };
   localCases(): Promise<LocalCaseRow[]>;
   /** Deletes ONE case with the exact undelivered shape; returns whether it is gone. */
   deleteLocalCase(internalId: string): Promise<boolean>;
@@ -38,11 +38,39 @@ export interface ResetDeps {
   backup(value: unknown): Promise<void>;
 }
 
+/**
+ * NOT_REACHED_ONBOARDING: no onboarding response captured (firewall, authentication).
+ * REJECTED_BY_REIS_VALIDATION: REIS answered the onboarding call with HTTP 400 "Validation failed for field: ..."
+ * (19/11/2026 14:14: account_manager_email). A validation rejection is a definite answer, not a lost one: REIS
+ * refused the request before creating anything. Still needs REIS's written confirmation (operator reference).
+ */
+export type ResetKind = 'NOT_REACHED_ONBOARDING' | 'REJECTED_BY_REIS_VALIDATION';
+
 export interface ResetPlan {
+  kind: ResetKind | null;
   row: StagingBackupRow | null;
   trigger: string | null;
   cases: LocalCaseRow[];
+  /** The exact RESPONSE the failed attempt wrote; the reset UPDATE requires it unchanged. */
+  expectedResponse: string | null;
+  /** For a validation rejection: the field REIS named (no customer data). */
+  rejectedField: string | null;
   refusals: string[];
+}
+
+const VALIDATION_MESSAGE = /^Validation failed for field: ([A-Za-z0-9_.]{1,80})\b/;
+
+/** HTTP 400 whose body is REIS's BAD_REQUEST "Validation failed for field: <name>". */
+export function validationRejection(wire: unknown): string | null {
+  const w = wire as { status?: unknown; body?: unknown } | null;
+  if (!w || w.status !== 400 || typeof w.body !== 'string') return null;
+  try {
+    const body = JSON.parse(w.body) as { status?: unknown; message?: unknown };
+    if (body.status !== 'BAD_REQUEST' || typeof body.message !== 'string') return null;
+    return VALIDATION_MESSAGE.exec(body.message)?.[1] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function planReset(deps: ResetDeps): Promise<ResetPlan> {
@@ -50,17 +78,34 @@ export async function planReset(deps: ResetDeps): Promise<ResetPlan> {
   const trigger = await deps.staging.triggerStatus();
   const cases = await deps.localCases();
   const refusals: string[] = [];
-  if (deps.evidence.wireSaved) refusals.push('WIRE_RESPONSE_EXISTS_REIS_ANSWERED');
-  if (JSON.stringify(deps.evidence.failure) !== UNDELIVERED_RESPONSE)
-    refusals.push('FAILURE_EVIDENCE_NOT_UNDELIVERED');
+  let kind: ResetKind | null = null;
+  let expectedResponse: string | null = null;
+  let rejectedField: string | null = null;
+  const failure = JSON.stringify(deps.evidence.failure);
+
+  if (!deps.evidence.wireSaved) {
+    kind = 'NOT_REACHED_ONBOARDING';
+    expectedResponse = UNDELIVERED_RESPONSE;
+    if (failure !== UNDELIVERED_RESPONSE) refusals.push('FAILURE_EVIDENCE_NOT_UNDELIVERED');
+  } else {
+    rejectedField = validationRejection(deps.evidence.wire);
+    if (!rejectedField) {
+      refusals.push('WIRE_RESPONSE_EXISTS_REIS_ANSWERED');
+    } else {
+      kind = 'REJECTED_BY_REIS_VALIDATION';
+      expectedResponse = JSON.stringify({ wire: deps.evidence.wire, delivery: 'UNCERTAIN' });
+      if (failure !== expectedResponse) refusals.push('FAILURE_EVIDENCE_DOES_NOT_MATCH_WIRE');
+    }
+  }
   if (
     !row ||
     row.processStatus !== 'E' ||
-    row.response !== UNDELIVERED_RESPONSE ||
+    expectedResponse === null ||
+    row.response !== expectedResponse ||
     row.retryCount !== 1 ||
     row.reisFinalStatus !== null
   )
-    refusals.push('STAGING_ROW_NOT_UNDELIVERED_E');
+    refusals.push('STAGING_ROW_NOT_THE_FAILED_ATTEMPT');
   if (trigger !== 'E') refusals.push('TRIGGER_NOT_E');
   const c = cases[0];
   if (
@@ -74,13 +119,13 @@ export async function planReset(deps: ResetDeps): Promise<ResetPlan> {
     c.last_error_code !== 'SINGLE_TRIAL_DELIVERY_UNCERTAIN'
   )
     refusals.push('LOCAL_CASE_NOT_THE_UNDELIVERED_ATTEMPT');
-  return { row, trigger, cases, refusals };
+  return { kind, row, trigger, cases, expectedResponse, rejectedField, refusals };
 }
 
 export async function applyReset(
   deps: ResetDeps,
   opts: { confirmation?: string; reisConfirmation?: string },
-): Promise<{ reset: true; msgId: string; caseRemoved: string }> {
+): Promise<{ reset: true; kind: ResetKind; msgId: string; caseRemoved: string }> {
   if (opts.confirmation !== RESET_CONFIRMATION)
     throw new SingleTrialRefusedError('CONFIRMATION_REQUIRED');
   if (!opts.reisConfirmation || opts.reisConfirmation.trim().length < 10)
@@ -93,12 +138,17 @@ export async function applyReset(
     reisConfirmation: opts.reisConfirmation,
     at: new Date().toISOString(),
   });
-  if (!(await deps.staging.resetUndelivered(row)))
+  if (!(await deps.staging.resetUndelivered(row, plan.expectedResponse as string)))
     throw new SingleTrialRefusedError('RESET_ROW_NOT_ACQUIRED');
   if (!(await deps.staging.resetTrigger()))
     throw new SingleTrialRefusedError('ROW_RESET_BUT_TRIGGER_NOT_RESET');
   const caseId = plan.cases[0].internal_id;
   if (!(await deps.deleteLocalCase(caseId)))
     throw new SingleTrialRefusedError('ORACLE_RESET_BUT_LOCAL_CASE_NOT_REMOVED');
-  return { reset: true, msgId: row.msgId as string, caseRemoved: caseId };
+  return {
+    reset: true,
+    kind: plan.kind as ResetKind,
+    msgId: row.msgId as string,
+    caseRemoved: caseId,
+  };
 }
