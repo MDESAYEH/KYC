@@ -19,6 +19,8 @@ export interface FakeReply {
   status?: number;
   /** Object is JSON-encoded; string is sent verbatim (to simulate invalid JSON). */
   body?: unknown;
+  /** Response content type; defaults to JSON for the existing fake API contract. */
+  contentType?: string;
   /** Delay before replying (to trigger client timeouts). */
   delayMs?: number;
   /** Destroy the socket instead of replying. */
@@ -98,7 +100,7 @@ export class FakeReisServer {
       return;
     }
     const text = typeof reply.body === 'string' ? reply.body : JSON.stringify(reply.body ?? {});
-    res.writeHead(reply.status ?? 200, { 'Content-Type': 'application/json' });
+    res.writeHead(reply.status ?? 200, { 'Content-Type': reply.contentType ?? 'application/json' });
     res.end(text);
   }
 }

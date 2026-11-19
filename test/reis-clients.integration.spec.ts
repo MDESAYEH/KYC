@@ -389,10 +389,82 @@ describe('REIS clients against a fake REIS server', () => {
     });
 
     it.each([400, 404, 500, 502])('classifies HTTP %i as a non-2xx failure', async (status) => {
-      server.onboardingHandler = () => ({ status, body: { status: 'CLEAN' } });
+      server.onboardingHandler = () => ({
+        status,
+        body: { errorCode: 'INVALID_INPUT', errorMessage: 'A supported diagnostic' },
+      });
+      const err = await fail(onboarding.onboard(individualRequest, { correlationId: 'corr-http-error' }));
+      expect(err).toBeInstanceOf(ReisHttpStatusError);
+      expect(err).toMatchObject({
+        httpStatus: status,
+        operation: 'searchOnboardCustomer',
+        responseDetails: {
+          contentType: 'application/json',
+          body: expect.stringContaining('errorCode=INVALID_INPUT'),
+        },
+      });
+    });
+
+    it('keeps a bounded sanitized non-JSON HTTP error response', async () => {
+      server.onboardingHandler = () => ({
+        status: 400,
+        body: 'REIS upstream rejected the request',
+        contentType: 'text/plain; charset=utf-8',
+      });
+      const err = await fail(onboarding.onboard(individualRequest, { correlationId: 'corr-http-error' }));
+      expect(err).toMatchObject({
+        responseDetails: {
+          contentType: 'text/plain',
+          body: 'REIS upstream rejected the request',
+          truncated: false,
+        },
+      });
+    });
+
+    it('bounds long HTTP error diagnostics and redacts sensitive values', async () => {
+      const lines: string[] = [];
+      jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation((...args: unknown[]) => void lines.push(inspect(args, { depth: 6 })));
+      const longMessage = `bad input ${'x'.repeat(1000)}`;
+      server.onboardingHandler = () => ({
+        status: 500,
+        body: {
+          errorCode: 'INVALID_INPUT',
+          errorMessage: `${longMessage} jane@example.test 123456789`,
+          password: PASSWORD,
+          token: 'response-token',
+          customerName: 'SensitiveFirst',
+          amount: 250000,
+        },
+      });
+      const err = await fail(onboarding.onboard(individualRequest, { correlationId: 'corr-http-error' }));
+      expect(err).toMatchObject({
+        responseDetails: {
+          truncated: true,
+          body: expect.stringContaining('errorCode=INVALID_INPUT'),
+        },
+      });
+      const details = (err as ReisHttpStatusError).responseDetails;
+      expect(details?.body.length).toBeLessThanOrEqual(500);
+      const captured = lines.join('\n') + inspect(err, { depth: 6 });
+      for (const secret of [PASSWORD, 'response-token', 'SensitiveFirst', '250000', 'jane@example.test', '123456789']) {
+        expect(captured).not.toContain(secret);
+      }
+      expect(captured).toContain('searchOnboardCustomer');
+      expect(captured).toContain('500');
+      expect(captured).toContain('application/json');
+      expect(captured).toContain('corr-http-error');
+    });
+
+    it('does not let diagnostic logging change the HTTP error', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {
+        throw new Error('logging unavailable');
+      });
+      server.onboardingHandler = () => ({ status: 500, body: { errorCode: 'UPSTREAM_FAILURE' } });
       const err = await fail(onboarding.onboard(individualRequest));
       expect(err).toBeInstanceOf(ReisHttpStatusError);
-      expect(err).toMatchObject({ httpStatus: status, operation: 'searchOnboardCustomer' });
+      expect(err).toMatchObject({ httpStatus: 500, operation: 'searchOnboardCustomer' });
     });
 
     it.each([401, 403])(

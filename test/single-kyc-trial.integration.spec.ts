@@ -158,7 +158,7 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
       assertExecutionAllowed: async () => undefined,
       staging: new SingleKycTrialRepository(db, 'STAGE'),
       sourceSqlSha256: trialHash('synthetic verified query'),
-      readCif: jest.fn(async () => [{ CIF_VALUE: '00005804' }]),
+      readCif: jest.fn(async () => [{ CIF_VALUE: '00005818' }]),
       load: () =>
         new FlexcubeKycSource(db, 'STAGE', '2026-11-16').load({
           kycRefNo: TARGET.kycRefNo,
@@ -189,7 +189,7 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
 
   it('preflight performs SELECT only and never authenticates, sends or creates a case', async () => {
     const plan = await planSingleKycTrial(deps);
-    expect(plan.plan.request.systemId).toBe('00005804');
+    expect(plan.plan.request.systemId).toBe('00005818');
     expect(plan.plan.target.seqNo).toBe(1); // STTM_CUSTOMER.MOD_NO, not the KYC MOD_NO (2)
     expect(db.writes).toHaveLength(0);
     expect(server.requests).toHaveLength(0);
@@ -211,7 +211,7 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
       });
       expect(server.requestsTo(path)).toHaveLength(1);
       expect(server.requestsTo(path)[0].json).toMatchObject({
-        systemId: '00005804',
+        systemId: '00005818',
         systemName: 'Flexcube',
       });
       expect(targetRow()).toMatchObject({
@@ -263,7 +263,7 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
     { rows: [{ CIF_VALUE: 5804 }], code: 'INVALID_CIF' },
     { rows: [{ CIF_VALUE: 'WRONG' }], code: 'CIF_DOES_NOT_MATCH_REPORTED_VALUE' },
     {
-      rows: [{ CIF_VALUE: '00005804' }, { CIF_VALUE: '00005804' }],
+      rows: [{ CIF_VALUE: '00005818' }, { CIF_VALUE: '00005818' }],
       code: 'CIF_SOURCE_MISSING_OR_AMBIGUOUS',
     },
   ])(

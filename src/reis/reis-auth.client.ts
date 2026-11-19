@@ -4,6 +4,7 @@ import { REIS_PATHS } from './reis.constants';
 import { ReisAuthRequest } from './dto/reis-auth.dto';
 import { REIS_CONFIG, ReisConfig } from './reis.config';
 import { ReisAuthenticationError, ReisHttpStatusError } from './reis.errors';
+import { summarizeReisHttpErrorResponse } from './reis-error-response';
 import { IReisAuthClient } from './reis.interfaces';
 import { ReisCallContext, ReisHttpTransport } from './transport/reis-http.transport';
 
@@ -35,7 +36,12 @@ export class ReisAuthClient implements IReisAuthClient {
       throw new ReisAuthenticationError('authenticate', res.status, correlationId);
     }
     if (res.status < 200 || res.status >= 300) {
-      throw new ReisHttpStatusError('authenticate', res.status, correlationId);
+      throw new ReisHttpStatusError(
+        'authenticate',
+        res.status,
+        correlationId,
+        summarizeReisHttpErrorResponse(res.body, res.contentType),
+      );
     }
 
     const token = parseAuthResponse(

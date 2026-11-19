@@ -3,6 +3,7 @@ import { ReisOnboardingRequest, ReisOnboardingResponse } from './dto';
 import { parseJsonBody, parseOnboardingResponse } from './reis-response.parser';
 import { REIS_HEADERS, REIS_PATHS } from './reis.constants';
 import { ReisAuthenticationError, ReisHttpStatusError } from './reis.errors';
+import { summarizeReisHttpErrorResponse } from './reis-error-response';
 import { IReisAuthClient, IReisOnboardingClient, REIS_AUTH_CLIENT } from './reis.interfaces';
 import { ReisCallContext, ReisHttpTransport } from './transport/reis-http.transport';
 
@@ -47,7 +48,12 @@ export class ReisOnboardingClient implements IReisOnboardingClient {
       throw new ReisAuthenticationError('searchOnboardCustomer', res.status, correlationId);
     }
     if (res.status < 200 || res.status >= 300) {
-      throw new ReisHttpStatusError('searchOnboardCustomer', res.status, correlationId);
+      throw new ReisHttpStatusError(
+        'searchOnboardCustomer',
+        res.status,
+        correlationId,
+        summarizeReisHttpErrorResponse(res.body, res.contentType),
+      );
     }
 
     const response = parseOnboardingResponse(

@@ -8,7 +8,7 @@ export const SINGLE_KYC_TRIAL = Object.freeze({
    * changed by a reviewed commit, never at run time.
    */
   seqNo: 1,
-  expectedCif: '00005804',
+  expectedCif: '00005818',
 });
 
 /**

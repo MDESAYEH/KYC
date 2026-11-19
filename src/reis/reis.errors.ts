@@ -1,4 +1,5 @@
 import { ReisOnboardingStatus } from './reis-status';
+import { ReisHttpErrorResponseDetails } from './reis-error-response';
 
 export type ReisOperation = 'authenticate' | 'searchOnboardCustomer';
 
@@ -93,6 +94,8 @@ export class ReisHttpStatusError extends ReisClientError {
     operation: ReisOperation,
     readonly httpStatus: number,
     correlationId?: string,
+    /** Safe, bounded diagnostic only; the raw response body is never attached to the error. */
+    readonly responseDetails?: ReisHttpErrorResponseDetails,
   ) {
     super(operation, `REIS ${operation} returned HTTP ${httpStatus}`, correlationId);
   }

@@ -2,6 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { REIS_HEADERS } from '../reis.constants';
 import { REIS_CONFIG, ReisConfig } from '../reis.config';
+import { summarizeReisHttpErrorResponse } from '../reis-error-response';
 import { ReisClientError, ReisNetworkError, ReisOperation, ReisTimeoutError } from '../reis.errors';
 
 export interface ReisCallContext {
@@ -13,6 +14,8 @@ export interface ReisRawResponse {
   status: number;
   /** Unparsed body text. */
   body: string;
+  /** Normalized Content-Type response header, when supplied by REIS. */
+  contentType?: string;
 }
 
 /** Failures that happen before any request can reach REIS (nothing was sent/processed). */
@@ -72,6 +75,9 @@ export class ReisHttpTransport {
         transformResponse: [(data: unknown) => data],
         validateStatus: () => true,
       });
+      const responseBody = typeof res.data === 'string' ? res.data : '';
+      const header = res.headers?.['content-type'];
+      const contentType = typeof header === 'string' ? header : undefined;
       this.logger.log({
         event: 'reis.http.response',
         operation,
@@ -79,7 +85,15 @@ export class ReisHttpTransport {
         durationMs: Date.now() - started,
         correlationId: context.correlationId,
       });
-      return { status: res.status, body: typeof res.data === 'string' ? res.data : '' };
+      if (res.status < 200 || res.status >= 300) {
+        this.logErrorResponse(
+          operation,
+          res.status,
+          context.correlationId,
+          summarizeReisHttpErrorResponse(responseBody, contentType),
+        );
+      }
+      return { status: res.status, body: responseBody, contentType };
     } catch (err) {
       const error = this.classify(operation, err, context.correlationId);
       this.logger.warn({
@@ -91,6 +105,28 @@ export class ReisHttpTransport {
         correlationId: context.correlationId,
       });
       throw error;
+    }
+  }
+
+  /** Observability is strictly best-effort: a logging failure never masks the REIS failure. */
+  private logErrorResponse(
+    operation: ReisOperation,
+    httpStatus: number,
+    correlationId: string | undefined,
+    details: ReturnType<typeof summarizeReisHttpErrorResponse>,
+  ): void {
+    try {
+      this.logger.warn({
+        event: 'reis.http.errorResponse',
+        operation,
+        httpStatus,
+        correlationId,
+        responseContentType: details.contentType,
+        responseBody: details.body,
+        responseBodyTruncated: details.truncated,
+      });
+    } catch {
+      // Intentionally empty: diagnostics must not affect classification or error propagation.
     }
   }
 

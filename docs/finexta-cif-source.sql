@@ -6,7 +6,7 @@
 --   * SEQ_NO = STTM_CUSTOMER.MOD_NO (Abhilash 19/11/2026: every send carries the CIF), so :seqNo is bound to the
 --     CIF revision, not to STTM_KYC_MASTER.MOD_NO. A CIF modified after the preflight returns no row (refused);
 --   * only CUSTOMER_NO is selected (aliased CIF_VALUE, the column the trial reads); no other customer data.
--- Checked 19/11/2026 on UAT1 (read-only): CIF 00005804, STTM_CUSTOMER.MOD_NO = 1, trigger row = U.
+-- Checked 19/11/2026 on UAT1 (read-only): CIF 00005818, STTM_CUSTOMER.MOD_NO = 1, trigger row = U.
 SELECT C.CUSTOMER_NO AS CIF_VALUE
   FROM STTM_CUSTOMER C
  WHERE C.KYC_REF_NO = :kycRefNo

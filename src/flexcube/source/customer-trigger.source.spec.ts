@@ -20,7 +20,7 @@ class Db implements IFlexcubeSqlExecutor {
 
 const SINCE = '2026-11-01';
 const row = (over: SqlRow = {}): SqlRow => ({
-  CUSTOMER_NO: '00005804',
+  CUSTOMER_NO: '00005818',
   KYC_REF_NO: 'K1',
   CIF_MOD_NO: 1,
   KYC_MOD_NO: 2,
@@ -37,7 +37,7 @@ describe('CustomerTriggerSource (STTM_CUSTOMER_CUSTOM, READY_TO_SCAN U -> P)', (
     const r = await new CustomerTriggerSource(db, 'STAGE', SINCE).findReady(10);
     expect(r).toEqual([
       {
-        customerNo: '00005804',
+        customerNo: '00005818',
         kycRefNo: 'K1',
         seqNo: 1, // the CIF revision (STTM_CUSTOMER.MOD_NO), not the KYC MOD_NO
         kycModNo: 2,
@@ -68,7 +68,7 @@ describe('CustomerTriggerSource (STTM_CUSTOMER_CUSTOM, READY_TO_SCAN U -> P)', (
   });
 
   const ready = {
-    customerNo: '00005804',
+    customerNo: '00005818',
     kycRefNo: 'K1',
     seqNo: 1,
     kycModNo: 2,
@@ -109,7 +109,7 @@ describe('CustomerTriggerSource (STTM_CUSTOMER_CUSTOM, READY_TO_SCAN U -> P)', (
     expect(c.sql).toContain('c.MOD_NO = :seqNo');
     expect(c.binds).toEqual({
       pickedStatus: 'P',
-      customerNo: '00005804',
+      customerNo: '00005818',
       kycRefNo: 'K1',
       readyStatus: 'U',
       seqNo: 1,
