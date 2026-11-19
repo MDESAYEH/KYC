@@ -172,7 +172,7 @@ describe('FlexcubeSyncService guards', () => {
           ...base,
           syncUncertainAck: ack,
         });
-      expect(make(['K1:1', '001ZKYC26151003Y:2'])).toBeInstanceOf(FlexcubeSyncService);
+      expect(make(['K1:1', '001ZKYC26151004Q:2'])).toBeInstanceOf(FlexcubeSyncService);
       for (const bad of [['K1'], ['k1:1'], ["K1:1' OR 1=1"], ['K1:x']]) {
         expect(() => make(bad)).toThrow(FlexcubeSyncConfigError);
       }

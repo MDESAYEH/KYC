@@ -3,7 +3,7 @@
 ## Done on UAT1
 
 - **First KYC sent to REIS UAT and CLEAN** (single-KYC trial, 19/11/2026 14:43 Libya): CIF `00005818`,
-  KYC `001ZKYC26151003Y`, SEQ_NO 1 (= `STTM_CUSTOMER.MOD_NO`). REIS customer id 247, risk LR. FLEXCUBE staging row
+  KYC `001ZKYC26151004Q`, SEQ_NO 1 (= `STTM_CUSTOMER.MOD_NO`). REIS customer id 247, risk LR. FLEXCUBE staging row
   `S` / `CLEAN`, trigger `STTM_CUSTOMER_CUSTOM` = `P`. Runbook: [single-kyc-trial-runbook.md](single-kyc-trial-runbook.md).
 - Connectivity: firewall 10.250.100.28 → 10.250.40.1:443 open; REIS UAT certificate renewed by bank IT (valid to
   01/06/2028); bank CA in `/etc/kyc/aiib-ca.pem`, loaded with `NODE_EXTRA_CA_CERTS` (systemd drop-in

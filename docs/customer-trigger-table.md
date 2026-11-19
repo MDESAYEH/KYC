@@ -29,7 +29,7 @@ says the PENDING / timeout account restriction (no account until a confirmed CLE
 2. A version or date column (e.g. KYC `MOD_NO`, last-authorized timestamp): without it a CIF modified while we process is lost
    and an amendment cannot be told from a duplicate; it also gives a cut-off.
 3. Is the table backfilled with existing customers (`U`)? It must hold only new records.
-4. A row for CIF `00005818` / KYC `001ZKYC26151003Y` for the UAT test (created before the table existed).
+4. A row for CIF `00005818` / KYC `001ZKYC26151004Q` for the UAT test (created before the table existed).
 5. Grants for REIS_KYC: `SELECT` on `STTM_CUSTOMER` and `STTM_CUSTOMER_CUSTOM`, and `UPDATE` on `READY_TO_SCAN` only.
 6. Written confirmation that account opening needs `REIS_FINAL_STATUS = 'CLEAN'` (blocked for PENDING, BLOCKED, NULL, timeout).
 
@@ -44,7 +44,7 @@ amendment rule for re-triggered revisions, then a synthetic end-to-end test.
 2. Version: `STTM_CUSTOMER.MOD_NO`, joined by `CUSTOMER_NO`, and it is the staging `SEQ_NO` ("you need to pass CUSTOMER_NO
    to REIS each time"). A CIF modified without a new KYC revision therefore gets a new `SEQ_NO` and no clash.
 3. Account opening: only `REIS_FINAL_STATUS = 'CLEAN'` allows it.
-4. The UAT test row `00005818` / `001ZKYC26151003Y` was inserted (U). Grants: SELECT / INSERT / UPDATE, synonym in place.
+4. The UAT test row `00005818` / `001ZKYC26151004Q` was inserted (U). Grants: SELECT / INSERT / UPDATE, synonym in place.
 
 Code: `findReady` returns `seqNo` = CIF `MOD_NO` (and the KYC `MOD_NO` as evidence); `markPicked` and the new `markError`
 are conditional on the trigger status AND on the CIF still being at that `MOD_NO`. The single-KYC trial follows the same
