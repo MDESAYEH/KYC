@@ -42,6 +42,7 @@ describe('SQL catalog (every statement sent to FLEXCUBE)', () => {
       'reconcile.isUntouchedSinceRestore',
       'reconcile.rollbackRestoredRow',
       'updater.finalStatus (approved-blocked)',
+      'trial.assertNoHigherRevision',
       'trial.restoreNeverSent',
       'trial.claim',
       'trial.markPicked (trigger U -> P)',

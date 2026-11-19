@@ -61,6 +61,7 @@ export async function planSingleKycTrial(deps: SingleTrialDeps) {
   const { master, canonical, request } = await payload(deps);
   const original = await deps.staging.read();
   deps.staging.assertNeverSent(original);
+  await deps.staging.assertNoHigherRevision();
   if (await deps.hasLocalIdentity())
     throw new SingleTrialRefusedError('LOCAL_OR_LEGACY_IDENTITY_EXISTS');
   const plan = {

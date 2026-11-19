@@ -17,7 +17,14 @@
   stale; run preflight again after deploying this change.
 - B4 closed (Abhilash 19/11: the account is authorized only when `REIS_FINAL_STATUS = CLEAN`). B6 closed (Bank, from the
   start of the project: REIS REJECT -> `BLOCKED`; approval file `rejectToBlockedApproved: true`).
-- Open with Abhilash: does the account check read the row with the highest SEQ_NO for the KYC?
+- Abhilash 19/11: the account authorization reads the row with the **highest SEQ_NO** of the KYC. The trial therefore
+  refuses (`HIGHER_SEQ_NO_EXISTS`) when the KYC has a row above the CIF MOD_NO (old rows used the KYC MOD_NO); the
+  trigger source reports `higherRows` for the poller. Tareq's KYC has only SEQ_NO 1.
+- B5 (19/11, review of 9f8b5fc): the callback route is exact for this trial: applied only when one revision was ever sent
+  under the CIF (`revision_count = 1`) and the staging UPDATE requires the case's exact SEQ_NO. The CLI refusal
+  `EXACT_REVISION_CALLBACK_ROUTE_NOT_IMPLEMENTED` and the quarantine of the CIF are removed; the old, never-sent identity
+  (systemId = KYC_REF_NO) stays quarantined. Residual limit (unchanged): a second revision of the same CIF is quarantined
+  until REIS echoes a per-submission identifier.
 
 
 Status 17/11/2026: **local preparation only.** Nothing in this document has been run against UAT1 or REIS.

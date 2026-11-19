@@ -86,6 +86,18 @@ export class SingleKycTrialRepository {
   key() {
     return { kycRefNo: TARGET.kycRefNo, seqNo: TARGET.seqNo };
   }
+  /**
+   * FLEXCUBE's account authorization reads the row with the HIGHEST SEQ_NO of the KYC (Abhilash 19/11/2026).
+   * Rows written before the trigger flow used the KYC MOD_NO, which can be above the CIF MOD_NO: our result would
+   * then be invisible to the account check. Refused instead of sending.
+   */
+  async assertNoHigherRevision(): Promise<void> {
+    const rows = await this.db.query(
+      `SELECT COUNT(*) AS N FROM ${this.table} WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO > :seqNo`,
+      this.key(),
+    );
+    if (Number(rows[0]?.N ?? 0) !== 0) throw new SingleTrialRefusedError('HIGHER_SEQ_NO_EXISTS');
+  }
   read(): Promise<StagingBackupRow | null> {
     return this.staging.readRowForBackup(this.key());
   }

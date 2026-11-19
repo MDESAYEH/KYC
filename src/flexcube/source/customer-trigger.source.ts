@@ -29,6 +29,11 @@ export interface ReadyCustomer {
   customerType: 'INDIVIDUAL' | 'CORPORATE';
   /** Staging rows that already exist for this CIF revision (decides reuse / skip, never an overwrite). */
   stagingRows: number;
+  /**
+   * Rows of the KYC with a HIGHER SEQ_NO (written before the trigger flow, SEQ_NO = KYC MOD_NO). FLEXCUBE's
+   * account check reads the highest SEQ_NO (Abhilash 19/11/2026), so such a customer must not be sent: E.
+   */
+  higherRows: number;
 }
 
 export class TriggerWriteDisabledError extends Error {
@@ -47,7 +52,9 @@ export const customerTriggerTable = 'STTM_CUSTOMER_CUSTOM';
 export const readyCustomersSql = (stagingTable: string, corporate: boolean): string =>
   `SELECT t.CUSTOMER_NO, t.KYC_REF_NO, c.MOD_NO AS CIF_MOD_NO, m.MOD_NO AS KYC_MOD_NO, m.KYC_CUST_TYPE,
           (SELECT COUNT(*) FROM ${stagingTable} s
-            WHERE s.KYC_REF_NO = t.KYC_REF_NO AND s.SEQ_NO = c.MOD_NO) AS STAGING_ROWS
+            WHERE s.KYC_REF_NO = t.KYC_REF_NO AND s.SEQ_NO = c.MOD_NO) AS STAGING_ROWS,
+          (SELECT COUNT(*) FROM ${stagingTable} s
+            WHERE s.KYC_REF_NO = t.KYC_REF_NO AND s.SEQ_NO > c.MOD_NO) AS HIGHER_ROWS
      FROM ${customerTriggerTable} t
      JOIN STTM_CUSTOMER c ON c.CUSTOMER_NO = t.CUSTOMER_NO
      JOIN STTM_KYC_MASTER m ON m.KYC_REF_NO = t.KYC_REF_NO
@@ -81,6 +88,7 @@ const toReady = (r: SqlRow): ReadyCustomer => ({
   kycModNo: Number(r.KYC_MOD_NO),
   customerType: r.KYC_CUST_TYPE === 'C' ? 'CORPORATE' : 'INDIVIDUAL',
   stagingRows: Number(r.STAGING_ROWS ?? 0),
+  higherRows: Number(r.HIGHER_ROWS ?? 0),
 });
 
 export class CustomerTriggerSource {

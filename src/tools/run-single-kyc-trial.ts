@@ -91,10 +91,10 @@ async function main() {
     throw new SingleTrialRefusedError('FINEXTA_CIF_SQL_NOT_SUPPLIED');
   const sql = sourcePath ? validateTrialSourceSql(readFileSync(sourcePath, 'utf8')) : '';
   const sourceSqlSha256 = trialHash(sql);
-  // Preparation is intentionally NOT executable live until a verified callback route replaces
-  // quarantine. A real initial response might be PENDING; no operator can force CLEAN.
+  // A PENDING answer is finished by the REIS callback: it must reach this exact revision. Refused if the CIF
+  // identity is ever quarantined again (see singleTrialCallbackIsHeld). No operator can force CLEAN.
   if (mode === 'send' && singleTrialCallbackIsHeld(TARGET.expectedCif))
-    throw new SingleTrialRefusedError('EXACT_REVISION_CALLBACK_ROUTE_NOT_IMPLEMENTED');
+    throw new SingleTrialRefusedError('CIF_CALLBACK_ROUTE_QUARANTINED');
   loadEnvFile();
   const config = loadConfiguration();
   if (config.flexcube.pollEnabled) throw new SingleTrialRefusedError('POLLING_MUST_BE_DISABLED');

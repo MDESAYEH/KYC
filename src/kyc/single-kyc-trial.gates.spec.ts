@@ -103,12 +103,13 @@ describe('conditions to lift the two single-trial gates (reported, never lifted 
     expect(gates({}, { ...complete(), rejectToBlockedApproved: false }).unmet).toEqual([]);
   });
 
-  it('a satisfied list does NOT lift anything: the quarantine and the CLI refusal are still in the code', () => {
+  it('19/11/2026: the CIF callback route is released (exact revision); only the old, never-sent identity is held', () => {
     expect(gates().mayBeLiftedByReviewedChange).toBe(true);
-    expect(singleTrialCallbackIsHeld(SINGLE_KYC_TRIAL.expectedCif)).toBe(true);
+    expect(singleTrialCallbackIsHeld(SINGLE_KYC_TRIAL.expectedCif)).toBe(false);
     expect(singleTrialCallbackIsHeld(SINGLE_KYC_TRIAL.kycRefNo)).toBe(true);
     const cli = readFileSync(join(__dirname, '..', 'tools', 'run-single-kyc-trial.ts'), 'utf8');
-    expect(cli).toContain('EXACT_REVISION_CALLBACK_ROUTE_NOT_IMPLEMENTED');
+    expect(cli).not.toContain('EXACT_REVISION_CALLBACK_ROUTE_NOT_IMPLEMENTED');
+    expect(cli).toContain('CIF_CALLBACK_ROUTE_QUARANTINED');
     const webhook = readFileSync(
       join(__dirname, '..', 'webhook', 'customer-status.service.ts'),
       'utf8',

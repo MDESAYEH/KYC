@@ -118,10 +118,10 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
         RESPONSE: '{"error":"ORA-01745"}',
         RETRY_COUNT: 1,
       });
-    // Another modification of the SAME KYC must never be touched, even if it has the highest SEQ_NO.
+    // A LOWER revision of the same KYC is never touched (the account check reads the highest SEQ_NO).
     db.staging.push({
       KYC_REF_NO: TARGET.kycRefNo,
-      SEQ_NO: 3,
+      SEQ_NO: 0,
       MSGID: 'f47ac10b-58cc-4372-a567-0e02b2c3d479',
       PROCESS_STATUS: 'E',
       REQUEST: null,
@@ -360,6 +360,12 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
     expect(targetRow().PROCESS_STATUS).toBe('E');
     expect(server.requests).toHaveLength(0);
   });
+  it('refuses when the KYC has a HIGHER SEQ_NO (the account check would never see our status)', async () => {
+    db.staging.push({ ...db.staging[0], KYC_REF_NO: TARGET.kycRefNo, SEQ_NO: 2 });
+    await expect(planSingleKycTrial(deps)).rejects.toMatchObject({ code: 'HIGHER_SEQ_NO_EXISTS' });
+    expect(db.writes).toHaveLength(0);
+    expect(server.requests).toHaveLength(0);
+  });
   it('detects changed payload between review and execution without any write', async () => {
     const plan = await planSingleKycTrial(deps);
     db.details.get(TARGET.kycRefNo)!.TOTAL_INCOME = 4000;
@@ -416,36 +422,57 @@ describe('ONE fixed KYC trial: synthetic Oracle, isolated SQLite, fake REIS HTTP
     expect(targetRow().PROCESS_STATUS).toBe('W');
     expect(targetRow().REIS_FINAL_STATUS).toBeUndefined();
   });
-  it.each([TARGET.expectedCif, TARGET.kycRefNo])(
-    'quarantines the trial identity on the legacy callback route (%s)',
-    async (systemId) => {
-      const cases = new TypeOrmKycCaseRepository(ds);
-      const c = await cases.create({
+  const pendingCase = async (systemId: string) => {
+    const cases = new TypeOrmKycCaseRepository(ds);
+    const c = await cases.create({
+      kycRefNo: TARGET.kycRefNo,
+      seqNo: TARGET.seqNo,
+      customerNo: TARGET.expectedCif,
+      reisSystemId: systemId,
+      customerType: CustomerType.INDIVIDUAL,
+    });
+    await cases.recordOnboardingResult(c.internalId, {
+      reisOnboardingStatus: ReisOnboardingStatus.PENDING,
+    });
+    const updateStatus = jest.fn(async () => undefined);
+    const service = new CustomerStatusService(
+      { authorize: () => true },
+      cases,
+      new TypeOrmWebhookEventRepository(ds),
+      { updateStatus },
+    );
+    return { cases, c, updateStatus, service };
+  };
+  it('the CIF callback of the trial reaches EXACTLY its revision (SEQ_NO 1), never MAX(SEQ_NO)', async () => {
+    const { service, updateStatus } = await pendingCase(TARGET.expectedCif);
+    expect(
+      await service.handle({
+        headers: {},
+        body: { systemId: TARGET.expectedCif, status: 'CUSTOMER' },
+      }),
+    ).toMatchObject({ result: 'APPLIED' });
+    expect(updateStatus).toHaveBeenCalledTimes(1);
+    expect(updateStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
         kycRefNo: TARGET.kycRefNo,
-        seqNo: 2,
-        customerNo: TARGET.expectedCif,
-        reisSystemId: systemId,
-        customerType: CustomerType.INDIVIDUAL,
-      });
-      await cases.recordOnboardingResult(c.internalId, {
-        reisOnboardingStatus: ReisOnboardingStatus.PENDING,
-      });
-      const updateStatus = jest.fn(async () => undefined);
-      const service = new CustomerStatusService(
-        { authorize: () => true },
-        cases,
-        new TypeOrmWebhookEventRepository(ds),
-        { updateStatus },
-      );
-      expect(
-        await service.handle({ headers: {}, body: { systemId, status: 'CUSTOMER' } }),
-      ).toMatchObject({ result: 'RECONCILIATION_REQUIRED' });
-      expect(updateStatus).not.toHaveBeenCalled();
-      expect((await cases.findByInternalId(c.internalId))?.finalStatus).toBeNull();
-      const events = await ds.query('SELECT detail_code AS code FROM webhook_event');
-      expect(events).toEqual([{ code: 'SINGLE_TRIAL_CALLBACK_QUARANTINED' }]);
-    },
-  );
+        seqNo: TARGET.seqNo,
+        finalStatus: 'CUSTOMER',
+      }),
+    );
+  });
+  it('the old identity (KYC_REF_NO, never sent) stays quarantined on the callback route', async () => {
+    const { service, updateStatus, cases, c } = await pendingCase(TARGET.kycRefNo);
+    expect(
+      await service.handle({
+        headers: {},
+        body: { systemId: TARGET.kycRefNo, status: 'CUSTOMER' },
+      }),
+    ).toMatchObject({ result: 'RECONCILIATION_REQUIRED' });
+    expect(updateStatus).not.toHaveBeenCalled();
+    expect((await cases.findByInternalId(c.internalId))?.finalStatus).toBeNull();
+    const events = await ds.query('SELECT detail_code AS code FROM webhook_event');
+    expect(events).toEqual([{ code: 'SINGLE_TRIAL_CALLBACK_QUARANTINED' }]);
+  });
   it('a proposed CLEAN returned by a stub cannot override a captured real PENDING body', async () => {
     deps.reis = { onboard: async () => ({ status: ReisOnboardingStatus.CLEAN }) };
     deps.wireResponse = () => ({ status: 200, body: '{"status":"PENDING"}' });

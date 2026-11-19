@@ -237,9 +237,9 @@ describe('callback -> revision binding (no seqNo in the REIS callback)', () => {
     expect(row(2).REIS_FINAL_STATUS).toBe('CLEAN');
   });
 
-  it('the single-record trial identities (old KYC reference AND the CIF) are quarantined: audited, no status, no write', async () => {
+  it('the old, never-sent trial identity (KYC reference) is quarantined: audited, no status, no write', async () => {
     const svc = service('clean-pending-blocked');
-    for (const id of [SINGLE_KYC_TRIAL.kycRefNo, SINGLE_KYC_TRIAL.expectedCif]) {
+    for (const id of [SINGLE_KYC_TRIAL.kycRefNo]) {
       const out = await svc.handle(callback(id, 'CUSTOMER'));
       expect(out.result).toBe('RECONCILIATION_REQUIRED');
       const [event] = await events.listBySystemId(id);

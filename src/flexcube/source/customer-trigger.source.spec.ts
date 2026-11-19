@@ -26,6 +26,7 @@ const row = (over: SqlRow = {}): SqlRow => ({
   KYC_MOD_NO: 2,
   KYC_CUST_TYPE: 'R',
   STAGING_ROWS: 0,
+  HIGHER_ROWS: 0,
   ...over,
 });
 
@@ -42,6 +43,7 @@ describe('CustomerTriggerSource (STTM_CUSTOMER_CUSTOM, READY_TO_SCAN U -> P)', (
         kycModNo: 2,
         customerType: 'INDIVIDUAL',
         stagingRows: 0,
+        higherRows: 0,
       },
     ]);
     const c = db.calls[0];
@@ -52,6 +54,7 @@ describe('CustomerTriggerSource (STTM_CUSTOMER_CUSTOM, READY_TO_SCAN U -> P)', (
     expect(c.sql).toContain("m.KYC_CUST_TYPE IN ('R')");
     expect(c.sql).toContain('JOIN STTM_CUSTOMER c ON c.CUSTOMER_NO = t.CUSTOMER_NO');
     expect(c.sql).toContain('s.SEQ_NO = c.MOD_NO');
+    expect(c.sql).toContain('s.SEQ_NO > c.MOD_NO) AS HIGHER_ROWS');
     expect(c.binds).toMatchObject({ readyStatus: 'U', maxRows: 10 });
     expect(db.calls.every((x) => x.kind === 'query')).toBe(true);
   });
@@ -71,6 +74,7 @@ describe('CustomerTriggerSource (STTM_CUSTOMER_CUSTOM, READY_TO_SCAN U -> P)', (
     kycModNo: 2,
     customerType: 'INDIVIDUAL' as const,
     stagingRows: 0,
+    higherRows: 0,
   };
 
   it('refuses to write unless writeEnabled is passed explicitly', async () => {

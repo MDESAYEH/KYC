@@ -1,9 +1,9 @@
 import type { SingleTrialApproval } from '../tools/single-kyc-trial.contract';
 
 /**
- * The exact conditions that must ALL hold before the two hard gates of the single-record trial may be
- * lifted: (1) the CLI refusal EXACT_REVISION_CALLBACK_ROUTE_NOT_IMPLEMENTED, (2) the callback quarantine
- * of the trial identities. This function only REPORTS what is still unmet (preflight shows it). It
+ * The operational conditions of the single-record trial (approval file, evidence references, vocabulary,
+ * polling off). The two code gates (CLI refusal and CIF callback quarantine) were lifted by the reviewed
+ * change of 19/11/2026; the approval below is still required by `send`. This function only REPORTS what is still unmet (preflight shows it). It
  * never lifts anything: both gates are constants in the code and are removed only by a reviewed change
  * after this list is empty and the evidence behind each approval reference was inspected by a person.
  * Passing local tests is not one of the conditions and never satisfies any of them.

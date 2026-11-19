@@ -105,6 +105,7 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
     kycModNo: 1,
     customerType: 'INDIVIDUAL',
     stagingRows: 0,
+    higherRows: 0,
   };
   await step('trigger.findReady, individuals only', () => trigger.findReady(1));
   await step('trigger.findReady', () => trigger.findReady(1, true));
@@ -147,6 +148,7 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   if (!['N', 'E', 'S'].includes(opts.inProgressStatus)) {
     const trial = new SingleKycTrialRepository(rec, opts.stagingTable, opts.inProgressStatus);
     await step('trial.master', () => trial.master());
+    await step('trial.assertNoHigherRevision', () => trial.assertNoHigherRevision());
     await step('trial.restoreNeverSent', () => trial.restoreNeverSent(backupRow));
     await step('trial.claim', () => trial.claim(msgId));
     await step('trial.markPicked (trigger U -> P)', () => trial.markPicked());

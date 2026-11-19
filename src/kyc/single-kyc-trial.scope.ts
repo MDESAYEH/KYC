@@ -11,7 +11,12 @@ export const SINGLE_KYC_TRIAL = Object.freeze({
   expectedCif: '00005804',
 });
 
-/** Fence both old and proposed identities out of the legacy MAX(SEQ_NO)/APPROVED callback path. */
+/**
+ * Only the OLD identity (systemId = KYC_REF_NO) stays quarantined: it was never sent, so a callback under it is
+ * unexpected. The CIF identity was released on 19/11/2026 after the review of 9f8b5fc: a callback is applied only
+ * when exactly one revision was ever sent under the CIF (kyc_case.revision_count = 1, true for this trial) and the
+ * staging update REQUIRES the case's exact SEQ_NO (no MAX(SEQ_NO) fallback), so it can only reach this trial's row.
+ */
 export function singleTrialCallbackIsHeld(systemId: string): boolean {
-  return systemId === SINGLE_KYC_TRIAL.kycRefNo || systemId === SINGLE_KYC_TRIAL.expectedCif;
+  return systemId === SINGLE_KYC_TRIAL.kycRefNo;
 }

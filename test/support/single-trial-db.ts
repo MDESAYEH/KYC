@@ -26,6 +26,14 @@ export class SingleTrialDb extends FakeFlexcubeDb {
       assertValidBinds(sql, b);
       return this.master.filter((m) => m.KYC_REF_NO === b.kycRefNo && m.RECORD_STAT === 'O');
     }
+    if (sql.includes('SEQ_NO > :seqNo')) {
+      this.statements.push(sql);
+      assertValidBinds(sql, b);
+      const n = this.staging.filter(
+        (r) => r.KYC_REF_NO === b.kycRefNo && r.SEQ_NO > Number(b.seqNo),
+      ).length;
+      return [{ N: n }];
+    }
     return super.query(sql, b);
   }
   override async execute(sql: string, b: SqlBinds) {
