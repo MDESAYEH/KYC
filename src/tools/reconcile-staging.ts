@@ -65,7 +65,6 @@ async function main(): Promise<void> {
     config.flexcube.stagingTable,
     config.flexcube.stagingStatusInProgress,
   );
-  // The integration layer's own database, READ-ONLY.
   const options = buildDataSourceOptions(config.database, config.nodeEnv) as DataSourceOptions;
   const local = new DataSource({ ...options, readonly: true } as DataSourceOptions);
   await local.initialize();
@@ -74,6 +73,9 @@ async function main(): Promise<void> {
     const rollbackFile = arg('--rollback');
     if (rollbackFile) {
       const report = await rollbackReconciliation({ repo }, readBackupFile(rollbackFile), {
+        apply,
+        confirmation: process.env.KYC_ROLLBACK_CONFIRM,
+      });
         apply,
         confirmation: process.env.KYC_ROLLBACK_CONFIRM,
       });

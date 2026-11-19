@@ -143,6 +143,7 @@ export class FlexcubeSyncService {
   /** Set in this process as soon as a delivery becomes uncertain; the DB check covers restarts. */
   private haltedInProcess = false;
   private sendingHalted = false;
+  private canaryLogged = false;
   private readonly acknowledged: ReadonlySet<string>;
 
   constructor(
@@ -190,6 +191,14 @@ export class FlexcubeSyncService {
     this.lastRunAt = started;
     let technicalFailures = 0;
 
+    if (!this.canaryLogged && this.source.onlyKycRefNos.length > 0) {
+      this.canaryLogged = true;
+      this.logger.warn({
+        event: 'flexcube.sync.canaryMode',
+        runId,
+        kycCount: this.source.onlyKycRefNos.length,
+      });
+    }
     // Rows claimed too long are reported first, then the send guard: nothing is sent while any
     // delivery to REIS is unresolved (or cannot be checked).
     await this.reportStuckInProgress(runId);
@@ -300,6 +309,10 @@ export class FlexcubeSyncService {
     const key: StagingKey = { kycRefNo: kyc.kycRefNo, seqNo: kyc.seqNo };
     if (!Number.isInteger(kyc.seqNo) || kyc.seqNo < 1) {
       this.logger.warn({ event: 'flexcube.sync.invalidSeqNo', runId, item });
+      return { outcome: 'skipped', technical: false };
+    }
+    if (!this.source.inScope(kyc.kycRefNo)) {
+      this.logger.warn({ event: 'flexcube.sync.outOfCanaryScope', runId, item });
       return { outcome: 'skipped', technical: false };
     }
     let step: SyncStep = 'insert';

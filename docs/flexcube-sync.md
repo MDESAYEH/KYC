@@ -131,6 +131,11 @@ The first version of the fix turned 58 untouched rows into `E` (`RESPONSE = {"er
 `REQ_DATE`). `npm run reconcile:staging` (alias `npm run staging:requeue`) can put them back to `N`. It is built to be
 audited and reversed, and it never runs by itself.
 
+### Canary: one KYC only (`FLEXCUBE_SYNC_ONLY_KYC_REF_NOS`, off by default)
+
+When set (max 5 references), every pass adds `AND m.KYC_REF_NO IN (:onlyKyc0, ...)` to both the pending and recovery queries.
+The journal logs canary mode with the count only.
+
 **Evidence, in two separate layers.**
 
 - *Programmatic* (what the code proves): the row is ours (UUID `MSGID`), `E`, `RETRY_COUNT = 1`, no `REQUEST` / `REQ_DATE` /
@@ -139,11 +144,8 @@ audited and reversed, and it never runs by itself.
   never succeeded means no REIS call from this code path. In addition the integration layer's own database must hold
   **no case and no REIS callback** for the KYC.
 - *Operational* (what only people can confirm): the local SQLite file could have been replaced or restored, another
-  instance or a manual call could have sent the request, and a sender outside this application (for example a FLEXCUBE
-  scheduler, open question N24) is not visible to the code. So applying needs an **attestation file**, bound by hash to the
-  exact list, in which a named approver states that REIS was checked for those systemIds, that no other sender was
-  active, and that the local database is the continuous one (and, if it has no case at all, acknowledges that an empty
-  database proves nothing). It is refused when stale (> 72 h), in the future, or written for another list.
+  instance or a manual call could have sent the request, and a sender outside this application is not visible to the code.
+  Applying therefore needs an attestation tied to the exact candidate-list hash.
 
 **Procedure** (Oracle is read-only until step 4; exports and backups write protected local files):
 
@@ -167,20 +169,11 @@ Use a restricted directory (0700 on Linux, an explicit restricted ACL on Windows
 3. Back up the local database: `npm run backup:sqlite -- /secure/path/kyc-local-<stamp>.sqlite`.
 4. `KYC_RECONCILE_CONFIRM=RESTORE_NEVER_SENT_ROWS npm run reconcile:staging -- --apply --backup-file /secure/path/backup-<stamp>.json --attestation /secure/path/attestation.json`.
 
-**What `--apply` does.** It re-checks everything, then writes and **verifies a full backup** of the original rows before any
-UPDATE: one JSON file (mode 600, never overwritten, flushed, read back) with every value the rollback needs (status,
-request, response, retry count, REQ_DATE, RES_DATE, final status, MSGID) and a manifest (row count, SHA-256 of the rows,
-list hash, the attestation and its hash, local-database facts). Then one conditional UPDATE per row, and the UPDATE repeats the
-**whole** eligibility predicate (ownership of the MSGID, status, counters, empty request, KYC open at the same `MOD_NO`, type,
-cut-off, exact RESPONSE marker), plus the exact backed-up MSGID and RES_DATE: a row that changed after it was selected is not touched. Concurrency tests cover every
-condition.
+**What `--apply` does.** It re-checks everything, then writes and verifies a full backup of the original rows before any
+UPDATE. The UPDATE repeats the whole eligibility predicate and exact backed-up MSGID and RES_DATE, so concurrent changes are not touched.
 
-**Rollback** (audited, same discipline): `npm run reconcile:staging -- --rollback /secure/path/backup-<stamp>.json` is a dry run;
-with `--apply` and `KYC_ROLLBACK_CONFIRM=ROLLBACK_RECONCILIATION` it puts the saved values back for each row that is still in the
-exact post-restore state. A row the service has claimed or sent since is left alone (a person decides). Accidental backup corruption is detected by hashes; these are not a digital signature and do not protect against an attacker who can rewrite the file and its hashes. Restrict access to the backup and approval files. Keep every backup and attestation: together they are the audit trail.
-
-After a restore the service sends the rows by itself on its next pass, so enable polling only afterwards and on purpose.
-The reconciliation was tested only against the in-memory test database; it has **not** been run on Oracle.
+**Rollback**: `npm run reconcile:staging -- --rollback /secure/path/backup-<stamp>.json` is a dry run; with `--apply` and
+`KYC_ROLLBACK_CONFIRM=ROLLBACK_RECONCILIATION` it restores the saved values only while rows remain in the exact post-restore state.
 
 ## UAT check diagnostics (`npm run check:uat1`, read-only)
 

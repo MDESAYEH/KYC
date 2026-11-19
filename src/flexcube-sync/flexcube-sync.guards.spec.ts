@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { FakeFlexcubeDb, StagingRow } from '../../test/support/fake-flexcube-db';
 import { INDIVIDUAL_ROW, onboarded, SINCE } from '../../test/support/sync-fixtures';
-import { FlexcubeKycSource } from '../flexcube/source/flexcube-kyc-source';
+import { FlexcubeKycSource, PendingKyc } from '../flexcube/source/flexcube-kyc-source';
 import {
   StagingKey,
   StagingSubmissionRepository,
@@ -14,10 +14,9 @@ import { createFlexcubeSync, FlexcubeSyncConfigError } from './flexcube-sync.mod
 import { FlexcubeSyncService } from './flexcube-sync.service';
 
 /**
- * Send guard of the polling service: once a delivery to REIS is uncertain, NOTHING is sent
- * automatically (also after a restart) until an operator reconciles and acknowledges the row.
- */
-const OWN = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
+ * PR #1 review: (1) a canary run must touch ONLY the named KYC, in pending AND recovery;
+ * (2) once a delivery to REIS is uncertain, NOTHING is sent automatically (also after a restart)
+ * until an operator reconciles and acknowledges the row.
 
 const timeoutResult = (): KycSubmissionResult =>
   ({
@@ -35,9 +34,9 @@ describe('FlexcubeSyncService guards', () => {
   let workflow: { submit: jest.Mock };
   let logged: Record<string, unknown>[];
 
-  const service = (ack: StagingKey[] = []) =>
+  const service = (only: string[] = [], ack: StagingKey[] = []) =>
     new FlexcubeSyncService(
-      new FlexcubeKycSource(db, 'STAGE', SINCE, 'KYC_KEYPERSON_TYPE'),
+      new FlexcubeKycSource(db, 'STAGE', SINCE, 'KYC_KEYPERSON_TYPE', only),
       new StagingSubmissionRepository(db, 'STAGE'),
       workflow as unknown as IKycWorkflow,
       20,
@@ -73,6 +72,24 @@ describe('FlexcubeSyncService guards', () => {
   });
   afterEach(() => jest.restoreAllMocks());
 
+  describe('canary: one named KYC only', () => {
+    beforeEach(() => {
+      for (const ref of ['A1', TAREQ, 'Z9']) addKyc(ref);
+      db.staging.push(own('A1'), own('Z9'));
+    });
+
+    it('takes only the canary KYC from pending and never recovers the other stuck rows', async () => {
+      const summary = await service([TAREQ]).runOnce();
+      expect(summary).toEqual({ found: 1, sent: 1, failed: 0, skipped: 0 });
+      expect(sentRefs()).toEqual([TAREQ]);
+      expect(db.staging.find((r) => r.KYC_REF_NO === 'A1')!.PROCESS_STATUS).toBe('N');
+      expect(db.staging.find((r) => r.KYC_REF_NO === 'Z9')!.PROCESS_STATUS).toBe('N');
+    });
+
+    it('is off by default: without a list every pending KYC is taken', async () => {
+      expect(await service().runOnce()).toMatchObject({ sent: 3 });
+    });
+  });
   describe('uncertain delivery stops all sending until reconciled', () => {
     beforeEach(() => {
       for (const ref of ['K1', 'K2', 'K3']) addKyc(ref);
@@ -116,7 +133,7 @@ describe('FlexcubeSyncService guards', () => {
         }),
       );
       expect(await service().runOnce()).toMatchObject({ sent: 0 });
-      const acked = service([{ kycRefNo: 'K1', seqNo: 1 }]);
+      const acked = service([], [{ kycRefNo: 'K1', seqNo: 1 }]);
       expect(await acked.runOnce()).toMatchObject({ sent: 2 }); // K2, K3; K1 itself is never resent
       expect(sentRefs()).toEqual(['K2', 'K3']);
     });
@@ -163,6 +180,7 @@ describe('FlexcubeSyncService guards', () => {
         keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
         stagingTable: 'STAGE',
         pollBatchSize: 20,
+        syncOnlyKycRefNos: [],
         syncUncertainAck: [],
       } as unknown as AppConfig['flexcube'];
       const make = (ack: string[]) =>
@@ -175,7 +193,6 @@ describe('FlexcubeSyncService guards', () => {
         expect(() => make(bad)).toThrow(FlexcubeSyncConfigError);
       }
     });
-
     it('a failure known to be BEFORE REIS (validation) does not stop the others', async () => {
       workflow.submit.mockResolvedValueOnce({
         outcome: 'FAILED',

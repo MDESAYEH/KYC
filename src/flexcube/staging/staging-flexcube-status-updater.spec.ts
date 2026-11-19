@@ -175,7 +175,7 @@ describe('FLEXCUBE updater selection', () => {
     syncStartDate: undefined,
     stagingStatusInProgress: 'W',
     keypersonTypeColumn: 'KYC_KEYPERSON_TYPE',
-    finalStatusVocabulary: 'approved-blocked',
+    syncOnlyKycRefNos: [] as string[],
     syncUncertainAck: [] as string[],
     ...over,
   });

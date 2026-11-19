@@ -71,6 +71,7 @@ describe('SQL catalog (every statement sent to FLEXCUBE)', () => {
   it('every statement uses the configured staging table and never a literal value for a KYC', () => {
     for (const e of catalog) expect(e.sql).not.toContain("'CATALOG'");
   });
+  });
 });
 
 describe('parse-only guard of describe()', () => {

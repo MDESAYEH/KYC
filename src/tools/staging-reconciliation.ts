@@ -12,82 +12,13 @@ import {
  * EVIDENCE, in two layers that are reported separately:
  *   programmatic (what the code can prove)
  *     - staging: ours (UUID MSGID), E, RETRY_COUNT 1, no REQUEST / REQ_DATE / REIS_FINAL_STATUS,
- *       RESPONSE exactly the technical marker of an allowed Oracle code, KYC still open at the same
- *       MOD_NO since the cut-off. In this application the claim comes before the read and the REIS
- *       call, so a claim that never succeeded means no REIS call from this code path;
- *     - the integration layer's local database has NO case and NO webhook callback for the KYC.
- *     This proves nothing about a replaced SQLite file, a second instance, a manual send or a
- *     sender outside this application (e.g. a FLEXCUBE scheduler), so it is NOT enough alone.
- *   operational (what only people can confirm): an ATTESTATION file, bound by hash to the exact list
- *     of rows, in which a named approver states that REIS was checked for those systemIds, that no
- *     other sender was active, and that the local database is the continuous one. Applying needs it.
+ *       RESPONSE exactly the technical marker of an allowed Oracle code, and the KYC still open at the same
+ *       MOD_NO since the cut-off.
+ *     - the integration layer has NO case and NO webhook callback for the KYC.
+ *   operational (what only people can confirm): REIS was checked and no other sender was active.
  *
- * SAFETY: dry run is the default and writes nothing. Applying needs the confirmation word, a valid
- * attestation, and a FULL backup of the original rows (every column the rollback needs, with a
- * manifest and SHA-256) that is written and verified BEFORE any UPDATE. Each UPDATE repeats the whole
- * eligibility predicate, so a row that changed after it was selected is not touched. A rollback
- * restores the saved values, only for rows still in the exact post-restore state. Reports hold
- * counts and hashes only, never identifiers.
- */
-export const RECONCILE_CONFIRMATION = 'RESTORE_NEVER_SENT_ROWS';
-export const ROLLBACK_CONFIRMATION = 'ROLLBACK_RECONCILIATION';
-/** An attestation older than this (or dated in the future) is refused. */
-export const ATTESTATION_MAX_AGE_MS = 72 * 3_600_000;
-
-export interface LocalEvidence {
-  /** Has the integration layer ever created a case for this KYC (= started a REIS submission)? */
-  hasCase(kycRefNo: string): Promise<boolean>;
-  /** Did REIS ever call back for it (so REIS knew the request)? */
-  hasWebhookEvent(kycRefNo: string): Promise<boolean>;
-  /** Is the local database used at all (an empty one proves nothing)? */
-  summary(): Promise<{ caseCount: number; oldestCaseAt: string | null }>;
-}
-
-/** Written by a person after checking REIS; bound to the exact list by its hash. */
-export interface Attestation {
-  approvedBy: string;
-  /** ISO timestamp */
-  approvedAt: string;
-  /** sha256 of the eligible list printed by the dry run (see candidateListSha256) */
-  candidateListSha256: string;
-  /** REIS was checked for the systemIds of the list and shows no onboarding request for them */
-  reisChecked: boolean;
-  /** How: e.g. "REIS portal search by systemId on 17/11/2026 by <name>" */
-  reisCheckMethod: string;
-  /** No other sender (e.g. a FLEXCUBE scheduler, a manual call) was active for these KYCs */
-  noOtherSender: boolean;
-  /** The local SQLite file is the continuous production one (never replaced or restored) */
-  localDatabaseIsContinuous: boolean;
-  /** Required when the local database has no case at all */
-  localDatabaseEmptyAcknowledged?: boolean;
-  notes?: string;
-}
-
-export interface BackupManifest {
-  version: 1;
-  createdAt: string;
-  since: string;
-  errorCodes: string[];
-  rowCount: number;
-  /** sha256 of JSON.stringify(rows) */
-  rowsSha256: string;
-  candidateListSha256: string;
-  attestation: Attestation;
-  attestationSha256: string;
-  localDatabase: { caseCount: number; oldestCaseAt: string | null };
-}
-
-export interface BackupBundle {
-  manifest: BackupManifest;
-  rows: StagingBackupRow[];
-}
-
-export interface ReconciliationDeps {
-  repo: StagingSubmissionRepository;
-  local: LocalEvidence;
-  now?: () => number;
-  /** Writes AND verifies the backup; must throw on any problem. Called BEFORE any UPDATE. */
-  writeBackup?(bundle: BackupBundle): Promise<void>;
+ * SAFETY: dry run is the default. Applying needs confirmation, valid attestation, and a full verified backup
+ * written before any UPDATE. A rollback restores saved values only while rows remain in the exact post-restore state.
 }
 
 export interface ReconciliationOptions {
@@ -96,6 +27,10 @@ export interface ReconciliationOptions {
   /** Oracle codes whose E rows may be restored (default only ORA-01745). */
   errorCodes: string[];
   maxRows: number;
+  /** Restrict everything (SELECT and UPDATE) to this one KYC. */
+  onlyKycRefNo?: string;
+  /** Explicit opt-in to restore every eligible row (required with apply when no onlyKycRefNo). */
+  all?: boolean;
   apply: boolean;
   confirmation?: string;
   attestation?: Attestation;
@@ -105,9 +40,7 @@ export interface ReconciliationReport {
   mode: 'dry-run' | 'applied';
   evidence: {
     programmatic: {
-      /** rows satisfying every staging condition */
       stagingConditions: number;
-      /** ... that also have neither a local case nor a webhook callback */
       noLocalCaseNoCallback: number;
       excludedLocalCase: number;
       excludedWebhookEvent: number;
@@ -115,6 +48,9 @@ export interface ReconciliationReport {
     localDatabase: { caseCount: number; oldestCaseAt: string | null; empty: boolean };
     operational: { attestationProvided: boolean; attestationValid: boolean; problems: string[] };
   };
+  eligibleListSha256: string;
+  restored: number;
+  notRestored: number;
   eligible: number;
   /** Hash of the eligible list: the attestation must carry this value. */
   eligibleListSha256: string;
@@ -241,11 +177,17 @@ export async function reconcileNeverSent(
   opts: ReconciliationOptions,
 ): Promise<ReconciliationReport> {
   if (opts.apply) {
+    if (opts.onlyKycRefNo === undefined && !opts.all) {
+      throw new ReconciliationRefusedError('apply needs an explicit scope: --kyc <ref> or --all');
+    }
     if (opts.confirmation !== RECONCILE_CONFIRMATION) {
       throw new ReconciliationRefusedError('the confirmation word is missing or wrong');
     }
     if (!deps.writeBackup) throw new ReconciliationRefusedError('a backup file is required');
   }
+  const { report, eligible } = await planReconciliation(deps, opts);
+  if (!opts.apply) return report;
+
   const { report, eligible } = await planReconciliation(deps, opts);
   if (!opts.apply) return report;
 
@@ -257,13 +199,13 @@ export async function reconcileNeverSent(
   report.mode = 'applied';
   if (eligible.length === 0) return report;
 
-  // 1. the FULL original rows, as they are now
   const rows: StagingBackupRow[] = [];
   for (const key of eligible) {
     const row = await deps.repo.readRowForBackup(key);
     if (row === null) throw new ReconciliationRefusedError('a selected row disappeared');
     rows.push(row);
   }
+
   const attestation = opts.attestation as Attestation;
   const bundle: BackupBundle = {
     manifest: {
@@ -280,11 +222,8 @@ export async function reconcileNeverSent(
     },
     rows,
   };
-  // 2. written and verified before anything changes
   await deps.writeBackup!(bundle);
-  report.backupRowsSha256 = bundle.manifest.rowsSha256;
 
-  // 3. one conditional UPDATE per row; the code comes from the row's own saved RESPONSE
   for (const row of rows) {
     let code: string | undefined;
     try {
@@ -292,11 +231,10 @@ export async function reconcileNeverSent(
     } catch {
       code = undefined;
     }
-    const allowed = code !== undefined && opts.errorCodes.includes(code);
-    const restored = allowed
+    const restored = code !== undefined && opts.errorCodes.includes(code)
       ? await deps.repo.restoreNeverSent(
           { kycRefNo: row.kycRefNo, seqNo: row.seqNo },
-          code as string,
+          code,
           opts.since,
           row.msgId ?? '',
           row.resDate,
@@ -306,6 +244,8 @@ export async function reconcileNeverSent(
     else report.notRestored++;
   }
   return report;
+  }
+  return report;
 }
 
 // ---- rollback --------------------------------------------------------------------------------
@@ -313,14 +253,11 @@ export async function reconcileNeverSent(
 export interface RollbackReport {
   mode: 'dry-run' | 'applied';
   rows: number;
-  /** still exactly in the post-restore state: can be rolled back */
   rollbackable: number;
   rolledBack: number;
-  /** moved on since the restore (claimed, sent, changed): left alone, a person must decide */
   notRolledBack: number;
 }
 
-/** The manifest must describe the rows exactly; a damaged or edited backup is refused. */
 export function verifyBundle(bundle: BackupBundle): void {
   const m = bundle.manifest;
   if (m?.version !== 1 || !Array.isArray(bundle.rows)) {
@@ -328,14 +265,10 @@ export function verifyBundle(bundle: BackupBundle): void {
   }
   if (m.rowCount !== bundle.rows.length)
     throw new ReconciliationRefusedError('the backup row count differs');
-  if (m.rowsSha256 !== rowsSha256(bundle.rows)) {
-    throw new ReconciliationRefusedError(
-      'the backup rows do not match their hash (edited or damaged)',
-    );
-  }
-  if (m.attestationSha256 !== sha256(JSON.stringify(m.attestation))) {
+  if (m.rowsSha256 !== rowsSha256(bundle.rows))
+    throw new ReconciliationRefusedError('the backup rows do not match their hash (edited or damaged)');
+  if (m.attestationSha256 !== sha256(JSON.stringify(m.attestation)))
     throw new ReconciliationRefusedError('the backup attestation does not match its hash');
-  }
 }
 
 export async function rollbackReconciliation(
@@ -344,9 +277,9 @@ export async function rollbackReconciliation(
   opts: { apply: boolean; confirmation?: string },
 ): Promise<RollbackReport> {
   verifyBundle(bundle);
-  if (opts.apply && opts.confirmation !== ROLLBACK_CONFIRMATION) {
+  if (opts.apply && opts.confirmation !== ROLLBACK_CONFIRMATION)
     throw new ReconciliationRefusedError('the rollback confirmation word is missing or wrong');
-  }
+
   const report: RollbackReport = {
     mode: opts.apply ? 'applied' : 'dry-run',
     rows: bundle.rows.length,
@@ -359,6 +292,10 @@ export async function rollbackReconciliation(
       if (await deps.repo.isUntouchedSinceRestore(row)) report.rollbackable++;
       else report.notRolledBack++;
     } else if (await deps.repo.rollbackRestoredRow(row)) report.rolledBack++;
+    else report.notRolledBack++;
+  }
+  return report;
+}
     else report.notRolledBack++;
   }
   return report;
