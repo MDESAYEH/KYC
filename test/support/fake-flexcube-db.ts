@@ -129,10 +129,11 @@ export class FakeFlexcubeDb implements IFlexcubeSqlExecutor {
       return { rowsAffected: released.length };
     }
     for (const r of rows) {
-      if (sql.includes('REQUEST = COALESCE')) {
+      if (sql.includes('+ :retryIncrement')) {
+        // complete(): a CLOB column is set only when its bind is present (no COALESCE on Oracle)
         r.PROCESS_STATUS = String(b.targetStatus);
-        r.REQUEST = (b.requestJson as string | null) ?? r.REQUEST;
-        r.RESPONSE = (b.responseJson as string | null) ?? r.RESPONSE;
+        if (sql.includes('REQUEST = :requestJson')) r.REQUEST = b.requestJson as string;
+        if (sql.includes('RESPONSE = :responseJson')) r.RESPONSE = b.responseJson as string;
         r.RETRY_COUNT += Number(b.retryIncrement);
         if (sql.includes('RES_DATE = SYSDATE')) r.RES_DATE = 'SYSDATE';
       } else {

@@ -120,6 +120,9 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   await step('staging.complete', () =>
     repo.complete(key, { status: StagingProcessStatus.SUCCESS, request: {}, response: {} }),
   );
+  await step('staging.complete (response only)', () =>
+    repo.complete(key, { status: StagingProcessStatus.ERROR, response: {} }),
+  );
   await step('staging.findStuckInProgress', () => repo.findStuckInProgress(15, 1));
   await step('staging.findDeliveryRisk', () => repo.findDeliveryRisk(5, 1));
   await step('reconcile.findNeverSentTechnicalErrors', () =>

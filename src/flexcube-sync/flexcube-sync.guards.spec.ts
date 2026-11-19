@@ -132,7 +132,7 @@ describe('FlexcubeSyncService guards', () => {
 
     it('REIS answered but the result could not be stored: the row stays in progress, sending stops', async () => {
       db.executeHook = (sql) =>
-        sql.includes('REQUEST = COALESCE') ? new Error('ORA-03113: end-of-file') : undefined;
+        sql.includes('+ :retryIncrement') ? new Error('ORA-03113: end-of-file') : undefined;
       const sync = service();
       expect(await sync.runOnce()).toMatchObject({ sent: 0, failed: 1 });
       expect(db.staging[0].PROCESS_STATUS).toBe('W');

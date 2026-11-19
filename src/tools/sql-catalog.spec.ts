@@ -69,6 +69,14 @@ describe('SQL catalog (every statement sent to FLEXCUBE)', () => {
     }
   });
 
+  it('CLOB values (REQUEST / RESPONSE JSON) are bound directly, never inside COALESCE / NVL / TO_CLOB (ORA-00932)', () => {
+    for (const e of catalog)
+      expect([
+        e.name,
+        /(COALESCE|NVL|TO_CLOB)\(\s*:(requestJson|responseJson)/i.test(e.sql),
+      ]).toEqual([e.name, false]);
+  });
+
   it('every statement uses the configured staging table and never a literal value for a KYC', () => {
     for (const e of catalog) expect(e.sql).not.toContain("'CATALOG'");
   });

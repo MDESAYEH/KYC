@@ -359,7 +359,13 @@ export class StagingSubmissionRepository {
     return rows.map((r) => ({ kycRefNo: String(r.KYC_REF_NO), seqNo: Number(r.SEQ_NO) }));
   }
 
-  /** W -> S or E, storing the REIS request / response JSON when known. */
+  /**
+   * W -> S or E, storing the REIS request / response JSON when known.
+   * REQUEST / RESPONSE are CLOB: a value is bound DIRECTLY to the column (no COALESCE / NVL / TO_CLOB around
+   * the bind). COALESCE(:bind, CLOB) failed on real Oracle with ORA-00932 (isolated test, 19/11/2026), and a
+   * bind inside a SQL function is limited to the VARCHAR2 size, while a direct bind to a CLOB column is not.
+   * A column without a value is simply left out of the SET list, so it keeps what it had.
+   */
   async complete(
     key: StagingKey,
     outcome: {
@@ -369,20 +375,27 @@ export class StagingSubmissionRepository {
     },
   ): Promise<void> {
     const retry = outcome.status === StagingProcessStatus.ERROR ? 1 : 0;
+    const set = ['PROCESS_STATUS = :targetStatus'];
+    const binds: Record<string, string | number> = {
+      targetStatus: outcome.status,
+      retryIncrement: retry,
+      kycRefNo: key.kycRefNo,
+      seqNo: key.seqNo,
+      sourceStatus: this.inProgress,
+    };
+    if (outcome.request !== undefined) {
+      set.push('REQUEST = :requestJson');
+      binds.requestJson = JSON.stringify(outcome.request);
+    }
+    if (outcome.response !== undefined) {
+      set.push('RESPONSE = :responseJson');
+      binds.responseJson = JSON.stringify(outcome.response);
+    }
     const { rowsAffected } = await this.db.execute(
-      `UPDATE ${this.table} SET PROCESS_STATUS = :targetStatus, ` +
-        `REQUEST = COALESCE(:requestJson, REQUEST), RESPONSE = COALESCE(:responseJson, RESPONSE), ` +
+      `UPDATE ${this.table} SET ${set.join(', ')}, ` +
         `RETRY_COUNT = NVL(RETRY_COUNT, 0) + :retryIncrement, RES_DATE = SYSDATE ` +
         `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :sourceStatus`,
-      {
-        targetStatus: outcome.status,
-        requestJson: outcome.request === undefined ? null : JSON.stringify(outcome.request),
-        responseJson: outcome.response === undefined ? null : JSON.stringify(outcome.response),
-        retryIncrement: retry,
-        kycRefNo: key.kycRefNo,
-        seqNo: key.seqNo,
-        sourceStatus: this.inProgress,
-      },
+      binds,
     );
     if (rowsAffected !== 1) {
       throw new Error(`Staging row is not in progress`);

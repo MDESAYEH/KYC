@@ -29,7 +29,7 @@ const MIN = 60_000;
 const isClaim = (sql: string) => sql.includes('REQ_DATE = SYSDATE');
 const isRelease = (sql: string) => sql.includes('REQ_DATE = NULL');
 const isMarkError = (sql: string) => sql.includes('PROCESS_STATUS IN (:sourceStatusNew');
-const isComplete = (sql: string) => sql.includes('REQUEST = COALESCE');
+const isComplete = (sql: string) => sql.includes('+ :retryIncrement');
 
 describe('FlexcubeSyncService under failure', () => {
   let db: FakeFlexcubeDb;
