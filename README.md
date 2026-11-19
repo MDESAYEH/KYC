@@ -1,4 +1,4 @@
-> **Submission hold (CIF preparation):** new onboarding is blocked pending Finexta/Vneuron identity decisions. Keep polling disabled. Offline CIF previews do not authorize sending. See [CIF preparation and blockers](docs/reis-cif-identity.md) and [read-only discovery SQL](docs/cif-source-discovery.sql).
+> **Status (19/11/2026):** see [docs/STATUS.md](docs/STATUS.md). The first KYC was sent to REIS UAT through the single-trial tool and came back CLEAN. Automatic polling is still disabled (CIF submission hold) until it is wired to the trigger table.
 
 # KYC Integration API (FLEXCUBE <-> REIS)
 
@@ -95,12 +95,14 @@ report):
 npm run check:uat1
 ```
 
-Then enable polling. See [docs/setup.md](docs/setup.md) and [docs/uat-readiness.md](docs/uat-readiness.md).
+Polling stays disabled for now. See [docs/setup.md](docs/setup.md) and [docs/STATUS.md](docs/STATUS.md).
 
 ## Operations
 
 - UAT1 deployment, backup and rollback: [docs/deployment-uat1.md](docs/deployment-uat1.md).
-- Safety of the staging rows, circuit breaker, logs and reconciliation (`npm run reconcile:staging`, dry run by default): [docs/flexcube-sync.md](docs/flexcube-sync.md).
+- Safety of the staging rows, circuit breaker, logs and send guard: [docs/flexcube-sync.md](docs/flexcube-sync.md).
+- Trigger table (STTM_CUSTOMER_CUSTOM, SEQ_NO = CIF MOD_NO): [docs/customer-trigger-table.md](docs/customer-trigger-table.md).
+- Single-KYC trial and its reset (`npm run trial:one`, `npm run trial:reset`): [docs/single-kyc-trial-runbook.md](docs/single-kyc-trial-runbook.md).
 
 ## Security notes
 
@@ -114,5 +116,5 @@ Then enable polling. See [docs/setup.md](docs/setup.md) and [docs/uat-readiness.
 All documents are in [docs/](docs/): [workflow](docs/workflow.md), [FLEXCUBE sync](docs/flexcube-sync.md),
 [transformation](docs/transformation.md), [REIS transport](docs/reis-transport.md),
 [webhook](docs/customer-status-webhook.md), [persistence](docs/persistence.md),
-[operations](docs/operations.md), [confirmed vs TBD](docs/confirmed-vs-tbd.md),
-[decisions required](docs/external-decisions-required.md).
+[operations](docs/operations.md), [callback revision binding](docs/callback-revision-binding.md),
+[isolated Oracle tests](docs/isolated-oracle-tests.md), [current status](docs/STATUS.md).

@@ -1,5 +1,3 @@
-> **CIF requirement update — 17 November 2026:** Statements below equating primary REIS `systemId` with `KYC_REF_NO` describe the historical baseline and are superseded. The required customer identity is CIF; its Oracle source, lifecycle, historical identity reconciliation and revision/callback contract are still unverified. The current application holds all new submissions; historical callbacks remain supported. See [CIF preparation and blockers](reis-cif-identity.md).
-
 # FLEXCUBE sync (polling) and staging table
 
 Agreed architecture: FLEXCUBE never calls the integration layer. The integration layer reads
@@ -125,62 +123,12 @@ At the start of every pass:
 - **Rows stuck in the in-progress status** for more than 15 minutes (our own `MSGID`) are only reported
   (`flexcube.sync.stuckInProgress`, counts only). They are never resent: the submission may already have reached REIS.
 
-### Rows closed as E by the ORA-01745 incident (reconciliation, never automatic)
+### Rows closed as E by the ORA-01745 incident (17/11/2026)
 
-The first version of the fix turned 58 untouched rows into `E` (`RESPONSE = {"error":"ORA-01745"}`, no `REQUEST`, no
-`REQ_DATE`). `npm run reconcile:staging` (alias `npm run staging:requeue`) can put them back to `N`. It is built to be
-audited and reversed, and it never runs by itself.
-
-**Evidence, in two separate layers.**
-
-- *Programmatic* (what the code proves): the row is ours (UUID `MSGID`), `E`, `RETRY_COUNT = 1`, no `REQUEST` / `REQ_DATE` /
-  `REIS_FINAL_STATUS`, `RESPONSE` is exactly the marker of an allowed Oracle code, and its KYC is still open at the same
-  `MOD_NO` since the cut-off. In this application the claim comes before the read and the REIS call, so a claim that
-  never succeeded means no REIS call from this code path. In addition the integration layer's own database must hold
-  **no case and no REIS callback** for the KYC.
-- *Operational* (what only people can confirm): the local SQLite file could have been replaced or restored, another
-  instance or a manual call could have sent the request, and a sender outside this application (for example a FLEXCUBE
-  scheduler, open question N24) is not visible to the code. So applying needs an **attestation file**, bound by hash to the
-  exact list, in which a named approver states that REIS was checked for those systemIds, that no other sender was
-  active, and that the local database is the continuous one (and, if it has no case at all, acknowledges that an empty
-  database proves nothing). It is refused when stale (> 72 h), in the future, or written for another list.
-
-**Procedure** (Oracle is read-only until step 4; exports and backups write protected local files):
-
-Keep polling disabled on every instance and suspend all other senders throughout reconciliation and rollback.
-Use a restricted directory (0700 on Linux, an explicit restricted ACL on Windows); file mode 0600 alone does not set Windows ACLs.
-
-1. `npm run reconcile:staging -- --export-candidates /secure/path/candidates.csv` (dry run). It prints counts, the evidence and
-   the **hash of the eligible list**, and writes the list (mode 600, must not exist) for the REIS-side check.
-2. People check REIS for those systemIds and write the attestation:
-   ```json
-   {
-     "approvedBy": "Name Surname",
-     "approvedAt": "2026-11-17T10:00:00Z",
-     "candidateListSha256": "<hash printed by the dry run>",
-     "reisChecked": true,
-     "reisCheckMethod": "REIS portal search by systemId for every row of candidates.csv",
-     "noOtherSender": true,
-     "localDatabaseIsContinuous": true
-   }
-   ```
-3. Back up the local database: `npm run backup:sqlite -- /secure/path/kyc-local-<stamp>.sqlite`.
-4. `KYC_RECONCILE_CONFIRM=RESTORE_NEVER_SENT_ROWS npm run reconcile:staging -- --apply --backup-file /secure/path/backup-<stamp>.json --attestation /secure/path/attestation.json`.
-
-**What `--apply` does.** It re-checks everything, then writes and **verifies a full backup** of the original rows before any
-UPDATE: one JSON file (mode 600, never overwritten, flushed, read back) with every value the rollback needs (status,
-request, response, retry count, REQ_DATE, RES_DATE, final status, MSGID) and a manifest (row count, SHA-256 of the rows,
-list hash, the attestation and its hash, local-database facts). Then one conditional UPDATE per row, and the UPDATE repeats the
-**whole** eligibility predicate (ownership of the MSGID, status, counters, empty request, KYC open at the same `MOD_NO`, type,
-cut-off, exact RESPONSE marker), plus the exact backed-up MSGID and RES_DATE: a row that changed after it was selected is not touched. Concurrency tests cover every
-condition.
-
-**Rollback** (audited, same discipline): `npm run reconcile:staging -- --rollback /secure/path/backup-<stamp>.json` is a dry run;
-with `--apply` and `KYC_ROLLBACK_CONFIRM=ROLLBACK_RECONCILIATION` it puts the saved values back for each row that is still in the
-exact post-restore state. A row the service has claimed or sent since is left alone (a person decides). Accidental backup corruption is detected by hashes; these are not a digital signature and do not protect against an attacker who can rewrite the file and its hashes. Restrict access to the backup and approval files. Keep every backup and attestation: together they are the audit trail.
-
-After a restore the service sends the rows by itself on its next pass, so enable polling only afterwards and on purpose.
-The reconciliation was tested only against the in-memory test database; it has **not** been run on Oracle.
+The first version of the fix turned 58 untouched rows into `E` (`RESPONSE = {"error":"ORA-01745"}`, no `REQUEST`). They are
+kept as history. The reconciliation tool that could put them back to `N` was removed on 19/11/2026: those rows used
+`SEQ_NO = KYC MOD_NO`, while the trigger-table flow uses `SEQ_NO = CIF MOD_NO` (`docs/customer-trigger-table.md`). When
+FCUBS sets such a customer to `U` again, it is handled by that flow, not by a restore.
 
 ## UAT check diagnostics (`npm run check:uat1`, read-only)
 

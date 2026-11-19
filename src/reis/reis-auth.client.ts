@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { parseAuthResponse, parseJsonBody } from './reis-response.parser';
 import { REIS_PATHS } from './reis.constants';
+import { ReisAuthRequest } from './dto/reis-auth.dto';
 import { REIS_CONFIG, ReisConfig } from './reis.config';
 import { ReisAuthenticationError, ReisHttpStatusError } from './reis.errors';
 import { IReisAuthClient } from './reis.interfaces';
@@ -25,7 +26,7 @@ export class ReisAuthClient implements IReisAuthClient {
     const res = await this.transport.postJson(
       'authenticate',
       REIS_PATHS.authenticate,
-      { user_name: this.config.userName, password: this.config.password },
+      { user_name: this.config.userName, password: this.config.password } satisfies ReisAuthRequest,
       {},
       context,
     );

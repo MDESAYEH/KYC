@@ -44,8 +44,8 @@ const typesSql = (corporate: boolean): string => (corporate ? "('R', 'C')" : "('
 /**
  * Is the configured key-person type column present in STTM_KYC_CORP_KEYPERSONS_CUSTOM? (metadata only)
  * UAT1 read-only check (17/11/2026): KYC_KEYPERSON_TYPE exists in OBPPRD.STTM_KYC_CORP_KEYPERSONS_CUSTOM and
- * NOT in OBPPRD.STTM_KYC_CORP_KEYPERSONS: the type is read from the CUSTOM table. Its VALUES and their
- * meaning (I / C) still have to be confirmed (docs/uat1-readonly-discovery.sql, part D).
+ * NOT in OBPPRD.STTM_KYC_CORP_KEYPERSONS: the type is read from the CUSTOM table. Values (Abhilash, 10/11/2026):
+ * I = Individual, C = Corporate.
  */
 export const CORPORATE_TYPE_COLUMN_EXISTS_SQL = `
   SELECT COUNT(*) AS N FROM ALL_TAB_COLUMNS

@@ -20,12 +20,9 @@
     "test:cov": "jest --coverage",
     "mappings:seed": "nest build && node dist/mapping/seed/run-seed.js",
     "check:uat1": "nest build && node dist/tools/check-flexcube-uat.js",
-    "reconcile:staging": "nest build && node dist/tools/reconcile-staging.js",
-    "staging:requeue": "nest build && node dist/tools/reconcile-staging.js",
     "backup:sqlite": "nest build && node dist/tools/backup-sqlite.js",
     "trial:one": "nest build && node dist/tools/run-single-kyc-trial.js",
     "trial:reset": "nest build && node dist/tools/reset-single-kyc-trial.js",
-    "discover:uat1": "node dist/tools/run-readonly-discovery.js",
     "check:oracle-sql": "nest build && node dist/tools/check-oracle-sql.js"
   },
   "dependencies": {

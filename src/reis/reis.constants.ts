@@ -8,8 +8,6 @@ export const REIS_FORM = {
   CORPORATE_RELATION: { formId: 4, entityType: 'PM' },
 } as const;
 
-export type ReisEntityType = 'PP' | 'PM';
-
 export function reisFormFor(type: CustomerType) {
   return type === CustomerType.INDIVIDUAL ? REIS_FORM.INDIVIDUAL : REIS_FORM.CORPORATE;
 }

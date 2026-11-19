@@ -75,7 +75,6 @@ for Oracle.
 ```bash
 npm run check:uat1               # constraints, triggers, row classification, key-person column (SELECT only)
 npm run check:oracle-sql         # PARSE ONLY: Oracle parses every statement, nothing is executed
-npm run reconcile:staging        # DRY RUN: counts, evidence and the eligible-list hash; writes nothing
 ```
 
 Decisions that need a person (see the PR): the in-progress status the CHECK constraint accepts

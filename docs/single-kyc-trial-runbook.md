@@ -1,4 +1,11 @@
-# Single-record trial runbook (KYC 001ZKYC26151003Y, CIF 00005804, SEQ_NO 1 = CIF MOD_NO) — FOR REVIEW, NOT EXECUTED
+# Single-record trial runbook (KYC 001ZKYC26151003Y, CIF 00005804, SEQ_NO 1 = CIF MOD_NO)
+
+## Result 19/11/2026 14:43 (Libya): CLEAN
+
+REIS authentication 200, `searchOnboardCustomer` 200, status **CLEAN**, REIS customer id 247 (risk LR). FLEXCUBE staging
+SEQ_NO 1 = `S` / `CLEAN`, trigger `P`. Earlier attempts (11:07 firewall + expired REIS certificate + timeout/base URL,
+12:58 authentication 403 because of an unquoted `#` in `.env`, 14:14 HTTP 400 `account_manager_email` case-sensitive)
+were reset with `npm run trial:reset` after REIS confirmed nothing was created. The rest of this file is the history.
 
 ## First attempt 19/11/2026 11:07 and how to reset it
 

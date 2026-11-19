@@ -125,15 +125,7 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   );
   await step('staging.findStuckInProgress', () => repo.findStuckInProgress(15, 1));
   await step('staging.findDeliveryRisk', () => repo.findDeliveryRisk(5, 1));
-  await step('reconcile.findNeverSentTechnicalErrors', () =>
-    repo.findNeverSentTechnicalErrors(since, ['ORA-01745'], 1),
-  );
-  await step('reconcile.restoreNeverSent', () =>
-    repo.restoreNeverSent(key, 'ORA-01745', since, msgId, null),
-  );
-  await step('reconcile.readRowForBackup', () => repo.readRowForBackup(key));
-  await step('reconcile.isUntouchedSinceRestore', () => repo.isUntouchedSinceRestore(backupRow));
-  await step('reconcile.rollbackRestoredRow', () => repo.rollbackRestoredRow(backupRow));
+  await step('staging.readRowForBackup', () => repo.readRowForBackup(key));
 
   for (const vocabulary of ['approved-blocked', 'clean-pending-blocked'] as const) {
     const updater = new StagingFlexcubeStatusUpdater(rec, opts.stagingTable, vocabulary);

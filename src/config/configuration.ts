@@ -19,8 +19,6 @@ export interface AppConfig {
     securityMode: string | undefined;
     /** Token Reis sends as "Authorization: Bearer <token>" (WEBHOOK_BEARER_TOKEN). Secret. */
     bearerToken: string | undefined;
-    apiKey: string | undefined;
-    ipAllowlist: string[];
   };
   /**
    * FLEXCUBE Oracle database (UAT1 / PROD). Used to write the staging table
@@ -87,11 +85,6 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
     webhook: {
       securityMode: str(env.WEBHOOK_SECURITY_MODE),
       bearerToken: str(env.WEBHOOK_BEARER_TOKEN),
-      apiKey: str(env.WEBHOOK_API_KEY),
-      ipAllowlist: (env.WEBHOOK_IP_ALLOWLIST ?? '')
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
     },
     flexcube: {
       dbUser: str(env.FLEXCUBE_DB_USER),
@@ -121,11 +114,3 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
     retry: { maxAttempts: num(env.RETRY_MAX_ATTEMPTS), baseDelayMs: num(env.RETRY_BASE_DELAY_MS) },
   };
 }
-
-/** Config keys that must never appear in logs or persistence. */
-export const SENSITIVE_CONFIG_PATHS = [
-  'reis.password',
-  'webhook.apiKey',
-  'webhook.bearerToken',
-  'flexcube.dbPassword',
-] as const;

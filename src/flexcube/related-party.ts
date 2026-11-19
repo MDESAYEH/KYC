@@ -8,7 +8,6 @@ import { ReisRelationshipId } from '../reis/dto';
 
 /** STTM_KYC_CORP_KEYPERSONS.KYC_KEYPERSON_TYPE: I = individual (formId 3), C = company (formId 4). */
 export const KEYPERSON_TYPES = ['I', 'C'] as const;
-export type KeypersonType = (typeof KEYPERSON_TYPES)[number];
 
 /**
  * FLEXCUBE RELATIONSHIP code -> REIS relationshipId (agreed 11/2026). Codes are the FLEXCUBE

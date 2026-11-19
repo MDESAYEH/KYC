@@ -15,8 +15,6 @@ import { ReisFinalStatus } from '../../reis/reis-status';
  *     REQ_DATE           when the request was sent (set when the row is claimed)
  *     RES_DATE           when the submission completed (S or E)
  */
-export const DEFAULT_STAGING_TABLE = 'STTM_KYC_REIS_PAYLOAD_CUSTOM';
-
 /** Values FLEXCUBE reads in REIS_FINAL_STATUS. */
 export enum StagingFinalStatus {
   APPROVED = 'APPROVED',

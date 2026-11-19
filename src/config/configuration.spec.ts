@@ -12,19 +12,16 @@ describe('loadConfiguration', () => {
       systemName: 'Flexcube',
     });
     expect(c.webhook.securityMode).toBeUndefined();
-    expect(c.webhook.ipAllowlist).toEqual([]);
   });
 
   it('reads values from the environment', () => {
     const c = loadConfiguration({
       PORT: '8080',
       REIS_TENANT: 't1',
-      WEBHOOK_IP_ALLOWLIST: '10.0.0.1, 10.0.0.2',
       RETRY_MAX_ATTEMPTS: '5',
     });
     expect(c.port).toBe(8080);
     expect(c.reis.tenant).toBe('t1');
-    expect(c.webhook.ipAllowlist).toEqual(['10.0.0.1', '10.0.0.2']);
     expect(c.retry.maxAttempts).toBe(5);
   });
 

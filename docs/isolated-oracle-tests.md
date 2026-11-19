@@ -1,7 +1,7 @@
 # Isolated real-Oracle tests (B3 and B5)
 
-Prepared 18/11/2026. **Not run yet**: no Oracle is available on the development machine used for this work, so these
-tests are skipped. A passing run proves OUR SQL on a real Oracle; it does not prove the bank contract (B4) or anything
+Prepared 18/11/2026. **Run 19/11/2026 on Docker (Oracle 23 Free, WSL2): 16/16 PASS** after the ORA-00932 fix in
+`StagingSubmissionRepository.complete()` (CLOB bound inside COALESCE). Skipped by default (no Oracle in CI). A passing run proves OUR SQL on a real Oracle; it does not prove the bank contract (B4) or anything
 on UAT1. Nothing here touches UAT1, REIS, `.env` or the 58 historical rows.
 
 ## Safety (enforced by code, tested in `test/support/isolated-oracle.spec.ts`)

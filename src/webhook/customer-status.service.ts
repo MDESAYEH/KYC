@@ -108,8 +108,8 @@ export class CustomerStatusService {
 
     // 4. Correlate by systemId and apply the final status idempotently.
     const dto = plainToInstance(CustomerStatusDto, raw);
-    // The single-record trial identities are quarantined: no status update, no business effect, until
-    // the exact-revision callback route is implemented and verified (docs/codex-single-trial-handoff.md).
+    // The old, never-sent single-trial identity (systemId = KYC_REF_NO) is quarantined: no status update,
+    // no business effect (see singleTrialCallbackIsHeld). The CIF identity uses the exact-revision route.
     if (singleTrialCallbackIsHeld(dto.systemId)) {
       const done = await this.events.complete(event.eventId, {
         processingResult: 'RECONCILIATION_REQUIRED',

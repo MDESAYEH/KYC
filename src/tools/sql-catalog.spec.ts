@@ -19,7 +19,7 @@ describe('SQL catalog (every statement sent to FLEXCUBE)', () => {
     catalog = await collectSqlCatalog(opts);
   });
 
-  it('covers every code path: sync, staging, reconciliation, rollback, final status, single trial', () => {
+  it('covers every code path: sync, trigger, staging, final status, single trial and its reset', () => {
     const names = catalog.map((e) => e.name);
     for (const expected of [
       'source.findPending',
@@ -36,11 +36,7 @@ describe('SQL catalog (every statement sent to FLEXCUBE)', () => {
       'staging.complete',
       'staging.findStuckInProgress',
       'staging.findDeliveryRisk',
-      'reconcile.findNeverSentTechnicalErrors',
-      'reconcile.restoreNeverSent',
-      'reconcile.readRowForBackup',
-      'reconcile.isUntouchedSinceRestore',
-      'reconcile.rollbackRestoredRow',
+      'staging.readRowForBackup',
       'updater.finalStatus (approved-blocked)',
       'trial.assertNoHigherRevision',
       'trial.restoreNeverSent',
