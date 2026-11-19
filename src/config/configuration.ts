@@ -33,7 +33,7 @@ export interface AppConfig {
     stagingTable: string;
     /** Poll FLEXCUBE for saved KYCs (FLEXCUBE_POLL_ENABLED=true). Off by default. */
     pollEnabled: boolean;
-    /** Agreed 1-5 minutes; default 2 minutes. */
+    /** Agreed 10 seconds-5 minutes; default 2 minutes. */
     pollIntervalMs: number;
     /** Maximum KYCs taken per pass. */
     pollBatchSize: number;
@@ -99,7 +99,7 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
       dbSchema: str(env.FLEXCUBE_DB_SCHEMA),
       stagingTable: str(env.FLEXCUBE_STAGING_TABLE) ?? 'STTM_KYC_REIS_PAYLOAD_CUSTOM',
       pollEnabled: env.FLEXCUBE_POLL_ENABLED === 'true',
-      pollIntervalMs: clamp(num(env.FLEXCUBE_POLL_INTERVAL_MS) ?? 120_000, 60_000, 300_000),
+      pollIntervalMs: clamp(num(env.FLEXCUBE_POLL_INTERVAL_MS) ?? 120_000, 10_000, 300_000),
       pollBatchSize: clamp(num(env.FLEXCUBE_POLL_BATCH_SIZE) ?? 20, 1, 200),
       syncStartDate: str(env.FLEXCUBE_SYNC_START_DATE),
       stagingStatusInProgress: str(env.FLEXCUBE_STAGING_STATUS_IN_PROGRESS) ?? 'W',

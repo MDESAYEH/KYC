@@ -30,4 +30,17 @@ describe('loadConfiguration', () => {
     expect(c.reis.baseUrl).toBeUndefined();
     expect(c.retry.baseDelayMs).toBeUndefined();
   });
+
+  it('clamps FLEXCUBE polling intervals between 10 seconds and 5 minutes', () => {
+    expect(loadConfiguration({ FLEXCUBE_POLL_INTERVAL_MS: '10000' }).flexcube.pollIntervalMs).toBe(
+      10_000,
+    );
+    expect(loadConfiguration({ FLEXCUBE_POLL_INTERVAL_MS: '9999' }).flexcube.pollIntervalMs).toBe(
+      10_000,
+    );
+    expect(loadConfiguration({ FLEXCUBE_POLL_INTERVAL_MS: '300001' }).flexcube.pollIntervalMs).toBe(
+      300_000,
+    );
+    expect(loadConfiguration({}).flexcube.pollIntervalMs).toBe(120_000);
+  });
 });

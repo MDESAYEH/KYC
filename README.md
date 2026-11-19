@@ -49,7 +49,7 @@ Fill in `.env` (it is git-ignored; **never commit it**):
 | REIS | `REIS_BASE_URL` (https in production), `REIS_TENANT`, `REIS_USERNAME`, `REIS_PASSWORD`, `REIS_TIMEOUT_MS`, optional `REIS_SYSTEM_NAME` (default `Flexcube`) |
 | Webhook | `WEBHOOK_SECURITY_MODE=bearer`, `WEBHOOK_BEARER_TOKEN` (>= 32 chars, share with REIS over a secure channel) |
 | FLEXCUBE DB | `FLEXCUBE_DB_USER`, `FLEXCUBE_DB_PASSWORD`, `FLEXCUBE_DB_CONNECT_STRING` (`host:port/SERVICE`), optional `FLEXCUBE_DB_SCHEMA`, `FLEXCUBE_STAGING_TABLE` |
-| Polling | `FLEXCUBE_POLL_ENABLED=true`, `FLEXCUBE_POLL_INTERVAL_MS` (60000-300000), `FLEXCUBE_POLL_BATCH_SIZE` (1-200), **`FLEXCUBE_SYNC_START_DATE`** (mandatory when polling is on, e.g. `2026-11-16` or `2026-11-16T08:00:00`) |
+| Polling | `FLEXCUBE_POLL_ENABLED=true`, `FLEXCUBE_POLL_INTERVAL_MS` (10000-300000), `FLEXCUBE_POLL_BATCH_SIZE` (1-200), **`FLEXCUBE_SYNC_START_DATE`** (mandatory when polling is on, e.g. `2026-11-16` or `2026-11-16T08:00:00`) |
 | Local DB | `DB_TYPE=sqlite`, `DB_SQLITE_PATH` (local dev/test only) |
 
 Generate a webhook token:

@@ -68,7 +68,7 @@ CUSTOM row is missing, or a mandatory field is missing. Error messages name the 
 
 `FLEXCUBE_DB_USER`, `FLEXCUBE_DB_PASSWORD`, `FLEXCUBE_DB_CONNECT_STRING` (host:port/SERVICE),
 `FLEXCUBE_STAGING_TABLE` (optional), `FLEXCUBE_POLL_ENABLED=true`, `FLEXCUBE_POLL_INTERVAL_MS`
-(60000-300000), `FLEXCUBE_POLL_BATCH_SIZE` (1-200), `FLEXCUBE_SYNC_START_DATE` (mandatory when polling is enabled:
+(10000-300000), `FLEXCUBE_POLL_BATCH_SIZE` (1-200), `FLEXCUBE_SYNC_START_DATE` (mandatory when polling is enabled:
 ISO date `2026-11-16` or timestamp `2026-11-16T08:00:00`, no time-zone suffix; startup fails with a
 config error when missing or invalid, so historical KYCs are never sent by accident). The database user needs SELECT on the STTM
 tables and INSERT / UPDATE (no DELETE) on the staging table.
