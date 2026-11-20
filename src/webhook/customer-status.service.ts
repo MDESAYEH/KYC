@@ -71,10 +71,20 @@ export class CustomerStatusService {
       received.status !== undefined &&
       received.Status !== undefined &&
       received.status !== received.Status;
-    const raw =
+    const withStatus =
       received.status === undefined && received.Status !== undefined
         ? { ...received, status: received.Status }
         : received;
+    // systemId under another spelling (systemID, SystemId, system_id) or as a number (a CIF without its
+    // leading zeros): taken as text; correlation then also tries the CIF without leading zeros.
+    const idKey = Object.keys(withStatus).find((k) => /^system_?id$/i.test(k));
+    const idValue = idKey === undefined ? undefined : withStatus[idKey];
+    const raw =
+      typeof idValue === 'number' && Number.isInteger(idValue)
+        ? { ...withStatus, systemId: String(idValue) }
+        : idKey !== undefined && idKey !== 'systemId'
+          ? { ...withStatus, systemId: idValue }
+          : withStatus;
     const errors =
       isObject && !statusConflict
         ? await validate(plainToInstance(CustomerStatusDto, raw), { forbidUnknownValues: true })

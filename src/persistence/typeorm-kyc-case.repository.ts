@@ -315,7 +315,9 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
     // UPDATE, which stays correct under concurrent callbacks. This is the SQLite-safe design, NOT
     // the final production transaction design: review it when the production database is chosen.
     const manager = this.dataSource.manager;
-    const current = await this.findOneIn(manager, { reisSystemId });
+    const current =
+      (await this.findOneIn(manager, { reisSystemId })) ??
+      (await this.findByCifWithoutLeadingZeros(manager, reisSystemId));
     if (!current) return { outcome: 'UNKNOWN_CASE', kycCase: null };
 
     // Identity check first: a different REIS customerId than the stored one is never overwritten.
@@ -459,6 +461,21 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
 
   private async findOne(where: FindOptionsWhere<KycCaseEntity>): Promise<KycCase | null> {
     return this.findOneIn(this.dataSource.manager, where);
+  }
+
+  /** A numeric systemId may arrive without the CIF's leading zeros: exactly one case must match. */
+  private async findByCifWithoutLeadingZeros(
+    manager: EntityManager,
+    systemId: string,
+  ): Promise<KycCase | null> {
+    if (!/^\d+$/.test(systemId)) return null;
+    const rows = await manager
+      .getRepository(KycCaseEntity)
+      .createQueryBuilder('c')
+      .where("ltrim(c.reis_system_id, '0') = ltrim(:systemId, '0')", { systemId })
+      .limit(2)
+      .getMany();
+    return rows.length === 1 ? toDomain(rows[0]) : null;
   }
 
   private async findOneIn(
