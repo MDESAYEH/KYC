@@ -94,10 +94,18 @@ export class CustomerStatusService {
     };
 
     if (errors.length > 0) {
-      const event = await this.events.start({ ...echo, detailCode: 'INVALID_PAYLOAD' });
+      // Which fields failed (names only, never values), e.g. INVALID_PAYLOAD:ServiceType,customerId
+      const detailCode = `INVALID_PAYLOAD:${errors.map((e) => e.property).join(',')}`.slice(0, 100);
+      const event = await this.events.start({ ...echo, detailCode });
       const done = await this.events.complete(event.eventId, {
         processingResult: 'INVALID',
-        detailCode: 'INVALID_PAYLOAD',
+        detailCode,
+      });
+      this.logger.warn({
+        event: 'customerStatus.invalid',
+        eventId: done.eventId,
+        fields: errors.map((e) => e.property),
+        received: Object.keys(received),
       });
       return this.finish(done, 'INVALID');
     }
