@@ -64,7 +64,7 @@ export class CustomerStatusService {
     const receivedAt = new Date();
 
     // 1. Security first: nothing of an unauthorized body is read, parsed or stored.
-    if (!(await this.authorized(request))) return this.auditSecurityRejection(receivedAt);
+    if (!(await this.authorized(request))) return this.auditSecurityRejection(receivedAt, request);
 
     // 2. Validate the callback.
     const body = request.body;
@@ -175,7 +175,7 @@ export class CustomerStatusService {
   ): Promise<CustomerStatusOutcome> {
     const receivedAt = new Date();
     if (!(await this.authorized({ ...request, body: undefined }))) {
-      return this.auditSecurityRejection(receivedAt);
+      return this.auditSecurityRejection(receivedAt, request);
     }
     const event = await this.events.start({ receivedAt, detailCode });
     const done = await this.events.complete(event.eventId, {
@@ -187,7 +187,21 @@ export class CustomerStatusService {
 
   // ---- helpers ---------------------------------------------------------------------------
 
-  private async auditSecurityRejection(receivedAt: Date): Promise<CustomerStatusOutcome> {
+  private async auditSecurityRejection(
+    receivedAt: Date,
+    request: Pick<CustomerStatusRequest, 'headers' | 'remoteAddress'>,
+  ): Promise<CustomerStatusOutcome> {
+    // Diagnostics without the secret: who called, which header names, the auth scheme word and the length.
+    const auth = request.headers['authorization'];
+    const value = typeof auth === 'string' ? auth.trim() : '';
+    const [scheme, ...rest] = value.split(/\s+/);
+    this.logger.warn({
+      event: 'customerStatus.securityRejected',
+      remoteAddress: request.remoteAddress,
+      headerNames: Object.keys(request.headers),
+      authorizationScheme: value === '' ? null : rest.length > 0 ? scheme : '(no scheme)',
+      credentialLength: value === '' ? 0 : (rest.length > 0 ? rest.join(' ') : scheme).length,
+    });
     const event = await this.events.start({
       receivedAt,
       processingResult: 'SECURITY_REJECTED',
