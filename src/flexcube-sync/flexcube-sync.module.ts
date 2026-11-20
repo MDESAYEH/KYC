@@ -83,6 +83,7 @@ export function createTriggerSync(
       batchSize: flexcube.pollBatchSize,
       maxAttempts: flexcube.syncMaxAttempts,
       retryDelayMs: flexcube.syncRetryDelayMs,
+      recheckDelayMs: flexcube.syncRecheckDelayMs,
       cifAllowlist: new Set(flexcube.syncCifAllowlist),
     },
   );

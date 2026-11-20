@@ -36,6 +36,8 @@ export interface StagingKey {
  *   recoverStale   W -> N  a worker died while the row was claimed: RETRY_COUNT + 1, RES_DATE = now
  *   complete       W -> S  REIS answered (or W -> E after the last attempt); RES_DATE = now
  *   fail           N/W -> E  the KYC itself cannot be sent (data error, attempts exhausted)
+ *   reclaimFailed  E -> W  recheck of a validation failure that was never sent: RETRY_COUNT reset to 0
+ *   unclaimFailed  W -> E  the recheck stopped before REIS (technical error, trigger moved)
  *
  * REIS_FINAL_STATUS is written separately (StagingFlexcubeStatusUpdater). Only our own rows (UUID MSGID) are
  * recovered. Every value is a bind; only the validated table name is in the SQL text. Bind names are never
@@ -78,6 +80,30 @@ export class StagingSubmissionRepository {
   /** W -> N after a technical failure before the REIS call; the attempt is not counted. */
   async release(key: StagingKey): Promise<boolean> {
     return this.move(key, this.inProgress, StagingProcessStatus.NEW, 'REQ_DATE = NULL');
+  }
+
+  /**
+   * E -> W for a recheck: only a row that was never sent (REQUEST empty) and failed validation
+   * (RESPONSE carries `marker`). RETRY_COUNT restarts at 0: a validation failure is not a REIS attempt.
+   */
+  async reclaimFailed(key: StagingKey, marker: string): Promise<boolean> {
+    const { rowsAffected } = await this.db.execute(
+      `UPDATE ${this.table} SET PROCESS_STATUS = :targetStatus, REQ_DATE = SYSDATE, RETRY_COUNT = 0 ` +
+        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :sourceStatus ` +
+        `AND REQUEST IS NULL AND INSTR(RESPONSE, :validationMarker) > 0`,
+      {
+        ...key,
+        targetStatus: this.inProgress,
+        sourceStatus: StagingProcessStatus.ERROR,
+        validationMarker: marker,
+      },
+    );
+    return rowsAffected === 1;
+  }
+
+  /** W -> E: a recheck stopped before REIS; the row keeps its previous RESPONSE. */
+  async unclaimFailed(key: StagingKey): Promise<boolean> {
+    return this.move(key, this.inProgress, StagingProcessStatus.ERROR, 'RES_DATE = SYSDATE');
   }
 
   /** W -> N for another attempt later: stores what is known, RETRY_COUNT + 1, RES_DATE = now. */

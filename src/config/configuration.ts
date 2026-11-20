@@ -50,6 +50,8 @@ export interface AppConfig {
     syncMaxAttempts: number;
     /** Wait before another attempt (FLEXCUBE_SYNC_RETRY_DELAY_MS, default 60000). */
     syncRetryDelayMs: number;
+    /** Wait before a validation failure is read again (FLEXCUBE_SYNC_RECHECK_DELAY_MS, default 300000). */
+    syncRecheckDelayMs: number;
     /** Only these CIFs are sent (FLEXCUBE_SYNC_CIF_ALLOWLIST, comma separated). Empty = every CIF. */
     syncCifAllowlist: string[];
   };
@@ -95,6 +97,7 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
       keypersonTypeColumn: str(env.FLEXCUBE_KEYPERSON_TYPE_COLUMN) ?? 'KYC_KEYPERSON_TYPE',
       syncMaxAttempts: atLeast(num(env.FLEXCUBE_SYNC_MAX_ATTEMPTS) ?? 5, 1),
       syncRetryDelayMs: atLeast(num(env.FLEXCUBE_SYNC_RETRY_DELAY_MS) ?? 60_000, 1_000),
+      syncRecheckDelayMs: atLeast(num(env.FLEXCUBE_SYNC_RECHECK_DELAY_MS) ?? 300_000, 1_000),
       syncCifAllowlist: (env.FLEXCUBE_SYNC_CIF_ALLOWLIST ?? '')
         .split(',')
         .map((v) => v.trim())

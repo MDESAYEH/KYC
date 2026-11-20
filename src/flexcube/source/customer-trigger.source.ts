@@ -36,6 +36,11 @@ export interface TriggerWork {
   retryCount: number;
   /** The trigger is already P (a retry): it is not picked again. */
   picked: boolean;
+  /**
+   * A revision that failed validation (never sent) is checked again: the data may have been corrected in FLEXCUBE
+   * without a new CIF revision. Its trigger is E and its staging row E.
+   */
+  recheck: boolean;
 }
 
 const types = (corporate: boolean) => (corporate ? "('R', 'C')" : "('R')");
@@ -84,7 +89,31 @@ export const retryDueSql = (stagingTable: string, corporate: boolean): string =>
     ORDER BY s.RES_DATE
     FETCH FIRST :maxRows ROWS ONLY`;
 
-/** U -> P only while the CIF is still at the staged revision (a CIF modified in between stays U). */
+/**
+ * Our E rows that failed validation and were never sent (REQUEST empty, RESPONSE stage VALIDATION), last checked
+ * before the delay, trigger E and the CIF still at the same revision: the KYC is read and validated again.
+ */
+export const recheckDueSql = (stagingTable: string, corporate: boolean): string =>
+  `SELECT t.CUSTOMER_NO, t.KYC_REF_NO, c.MOD_NO AS CIF_MOD_NO, m.KYC_CUST_TYPE
+     FROM ${stagingTable} s
+     JOIN ${customerTriggerTable} t ON t.KYC_REF_NO = s.KYC_REF_NO
+     JOIN STTM_CUSTOMER c ON c.CUSTOMER_NO = t.CUSTOMER_NO AND c.MOD_NO = s.SEQ_NO
+     JOIN STTM_KYC_MASTER m ON m.KYC_REF_NO = t.KYC_REF_NO
+    WHERE s.PROCESS_STATUS = :errorStatus
+      AND s.REQUEST IS NULL
+      AND INSTR(s.RESPONSE, :validationMarker) > 0
+      AND REGEXP_LIKE(s.MSGID, '${OWN_MSGID_PATTERN}', 'i')
+      AND (s.RES_DATE IS NULL OR s.RES_DATE < SYSDATE - (:delaySeconds / 86400))
+      AND t.READY_TO_SCAN = :errorStatus
+      AND m.RECORD_STAT = 'O'
+      AND m.KYC_CUST_TYPE IN ${types(corporate)}
+    ORDER BY s.RES_DATE
+    FETCH FIRST :maxRows ROWS ONLY`;
+
+/** Marker of a validation failure in the staging RESPONSE (written by the poller). */
+export const VALIDATION_MARKER = '"stage":"VALIDATION"';
+
+/** U (or E for a recheck) -> P only while the CIF is still at the staged revision. */
 export const markPickedSql = `UPDATE ${customerTriggerTable} t
     SET READY_TO_SCAN = :pickedStatus
   WHERE t.CUSTOMER_NO = :customerNo AND t.KYC_REF_NO = :kycRefNo AND t.READY_TO_SCAN = :readyStatus
@@ -97,15 +126,16 @@ export const markErrorSql = `UPDATE ${customerTriggerTable} t
     AND t.READY_TO_SCAN IN (:readyStatus, :pickedStatus)
     AND EXISTS (SELECT 1 FROM STTM_CUSTOMER c WHERE c.CUSTOMER_NO = t.CUSTOMER_NO AND c.MOD_NO = :seqNo)`;
 
-const toWork = (r: SqlRow, picked: boolean): TriggerWork => ({
+const toWork = (r: SqlRow, picked: boolean, recheck = false): TriggerWork => ({
   customerNo: String(r.CUSTOMER_NO),
   kycRefNo: String(r.KYC_REF_NO),
   seqNo: Number(r.CIF_MOD_NO),
   customerType: r.KYC_CUST_TYPE === 'C' ? 'CORPORATE' : 'INDIVIDUAL',
   stagingRows: picked ? 1 : Number(r.STAGING_ROWS ?? 0),
-  higherRows: picked ? 0 : Number(r.HIGHER_ROWS ?? 0),
-  retryCount: Number(r.RETRY_COUNT ?? 0),
+  higherRows: picked || recheck ? 0 : Number(r.HIGHER_ROWS ?? 0),
+  retryCount: recheck ? 0 : Number(r.RETRY_COUNT ?? 0),
   picked,
+  recheck,
 });
 
 export class CustomerTriggerSource {
@@ -113,6 +143,7 @@ export class CustomerTriggerSource {
   private readonly sql: {
     ready: Record<'corporate' | 'individual', string>;
     retry: Record<'corporate' | 'individual', string>;
+    recheck: Record<'corporate' | 'individual', string>;
   };
 
   constructor(
@@ -133,6 +164,7 @@ export class CustomerTriggerSource {
         individual: readyCustomersSql(table, false, cutOff),
       },
       retry: { corporate: retryDueSql(table, true), individual: retryDueSql(table, false) },
+      recheck: { corporate: recheckDueSql(table, true), individual: recheckDueSql(table, false) },
     };
   }
 
@@ -161,13 +193,28 @@ export class CustomerTriggerSource {
     return rows.map((r) => toWork(r, true));
   }
 
-  /** U -> P for one row; false when it was no longer U or the CIF changed. */
+  /** Validation failures whose recheck delay has passed (trigger E, staging E, never sent). */
+  async findRecheckDue(
+    maxRows: number,
+    corporate: boolean,
+    delaySeconds: number,
+  ): Promise<TriggerWork[]> {
+    const rows = await this.db.query(this.sql.recheck[corporate ? 'corporate' : 'individual'], {
+      errorStatus: TRIGGER_ERROR,
+      validationMarker: VALIDATION_MARKER,
+      delaySeconds,
+      maxRows,
+    });
+    return rows.map((r) => toWork(r, false, true));
+  }
+
+  /** U -> P (E -> P for a recheck) for one row; false when it moved or the CIF changed. */
   async markPicked(work: TriggerWork): Promise<boolean> {
     const { rowsAffected } = await this.db.execute(markPickedSql, {
       pickedStatus: TRIGGER_PICKED,
       customerNo: work.customerNo,
       kycRefNo: work.kycRefNo,
-      readyStatus: TRIGGER_READY,
+      readyStatus: work.recheck ? TRIGGER_ERROR : TRIGGER_READY,
       seqNo: work.seqNo,
     });
     return rowsAffected === 1;

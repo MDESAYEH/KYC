@@ -87,12 +87,17 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
     higherRows: 0,
     retryCount: 0,
     picked: false,
+    recheck: false,
   };
   await step('trigger.findReady, individuals only', () => trigger.findReady(1, false));
   await step('trigger.findReady', () => trigger.findReady(1, true));
   await step('trigger.findReady, no cut-off', () => triggerNoCutOff.findReady(1, true));
   await step('trigger.findRetryDue, individuals only', () => trigger.findRetryDue(1, false, 60));
   await step('trigger.findRetryDue', () => trigger.findRetryDue(1, true, 60));
+  await step('trigger.findRecheckDue, individuals only', () =>
+    trigger.findRecheckDue(1, false, 60),
+  );
+  await step('trigger.findRecheckDue', () => trigger.findRecheckDue(1, true, 60));
   await step('trigger.markPicked', () => trigger.markPicked(work));
   await step('trigger.markError', () => trigger.markError(work));
 
@@ -102,6 +107,8 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   await step('staging.release', () => repo.release(key));
   await step('staging.fail', () => repo.fail(key, { error: 'ORA-00000' }));
   await step('staging.recoverStale', () => repo.recoverStale(5));
+  await step('staging.reclaimFailed', () => repo.reclaimFailed(key, '"stage":"VALIDATION"'));
+  await step('staging.unclaimFailed', () => repo.unclaimFailed(key));
   await step('staging.scheduleRetry', () => repo.scheduleRetry(key, { request: {}, response: {} }));
   await step('staging.scheduleRetry (response only)', () =>
     repo.scheduleRetry(key, { response: {} }),

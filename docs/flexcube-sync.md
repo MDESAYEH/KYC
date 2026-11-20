@@ -15,7 +15,10 @@ previous one ended, so two passes never overlap. A failing pass is logged and th
    the open `STTM_KYC_MASTER` row (created since `FLEXCUBE_SYNC_START_DATE` when it is set).
 3. **Retries due**: our `N` rows with `RETRY_COUNT > 0`, last attempt older than `FLEXCUBE_SYNC_RETRY_DELAY_MS`, trigger
    still `P` and the CIF still at that `MOD_NO`.
-4. Optional filter `FLEXCUBE_SYNC_CIF_ALLOWLIST`. Corporates only while the key-person type column is proven to exist.
+4. **Rechecks due**: our `E` rows that failed validation and were never sent (`REQUEST` empty, `RESPONSE` stage
+   `VALIDATION`), last checked more than `FLEXCUBE_SYNC_RECHECK_DELAY_MS` ago, trigger `E`, CIF still at that `MOD_NO`.
+   The KYC is read and validated again, so data corrected in FLEXCUBE is sent without a new CIF revision.
+5. Optional filter `FLEXCUBE_SYNC_CIF_ALLOWLIST`. Corporates only while the key-person type column is proven to exist.
 
 For each CIF revision:
 
@@ -32,7 +35,7 @@ staging row N (new MSGID, RETRY_COUNT 0) -> claimed W -> KYC details read -> tri
 | REIS not reached / token refused / timeout / 5xx / unreadable answer / crash during the call | `N`, `RETRY_COUNT + 1`, `RESPONSE` = code | `P` | sent again after the delay |
 | ... and that was attempt `FLEXCUBE_SYNC_MAX_ATTEMPTS` | `E` | `E` | a person looks at it |
 | REIS refused the data (HTTP 4xx) | `E` | `E` | corrected CIF comes back from FCUBS as `U` (new `MOD_NO`) |
-| KYC cannot be built (missing details, invalid field, CIF mismatch) | `E` | `E` | same |
+| KYC cannot be built (missing details, invalid field, CIF mismatch), never sent | `E`, `RESPONSE` stage `VALIDATION` + `detail` | `E` | read again every `FLEXCUBE_SYNC_RECHECK_DELAY_MS`; sent once the data is valid |
 | Database error before REIS | claim given back (`N`), not counted | unchanged | next pass |
 | REIS answered but the result could not be stored | stays `W` | `P` | recovered as stale, sent again |
 | A higher `SEQ_NO` already exists for the KYC / revision already finished | unchanged | `E` | a person looks at it |
@@ -47,7 +50,7 @@ Three database failures in a row end the pass; the next pass starts again.
 
 See [.env.example](../.env.example): `FLEXCUBE_POLL_ENABLED`, `FLEXCUBE_POLL_INTERVAL_MS` (default 10000, min 1000),
 `FLEXCUBE_POLL_BATCH_SIZE`, `FLEXCUBE_SYNC_START_DATE` (optional cut-off), `FLEXCUBE_SYNC_MAX_ATTEMPTS` (default 5),
-`FLEXCUBE_SYNC_RETRY_DELAY_MS` (default 60000), `FLEXCUBE_SYNC_CIF_ALLOWLIST` (empty = all),
+`FLEXCUBE_SYNC_RETRY_DELAY_MS` (default 60000), `FLEXCUBE_SYNC_RECHECK_DELAY_MS` (default 300000), `FLEXCUBE_SYNC_CIF_ALLOWLIST` (empty = all),
 `FLEXCUBE_STAGING_STATUS_IN_PROGRESS` (default `W`), `FLEXCUBE_KEYPERSON_TYPE_COLUMN` (default `KYC_KEYPERSON_TYPE`).
 The database user needs SELECT on the STTM tables, INSERT / UPDATE on the staging table and UPDATE on
 `STTM_CUSTOMER_CUSTOM` (no DELETE).

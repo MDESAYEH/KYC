@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import { KycRequestStatus } from '../common/kyc-status';
 import { oraCode, oracleErrorCode } from '../flexcube/oracle-error';
-import { CustomerTriggerSource, TriggerWork } from '../flexcube/source/customer-trigger.source';
+import {
+  CustomerTriggerSource,
+  TriggerWork,
+  VALIDATION_MARKER,
+} from '../flexcube/source/customer-trigger.source';
 import { FlexcubeKycSource } from '../flexcube/source/flexcube-kyc-source';
 import { InvalidSqlBindsError } from '../flexcube/staging/sql-binds';
 import {
@@ -28,6 +32,8 @@ export interface TriggerSyncOptions {
   maxAttempts: number;
   /** Wait between two attempts (FLEXCUBE_SYNC_RETRY_DELAY_MS). */
   retryDelayMs: number;
+  /** Wait before a validation failure is checked again (FLEXCUBE_SYNC_RECHECK_DELAY_MS). */
+  recheckDelayMs: number;
   /** Only these CIFs are sent; empty = all (FLEXCUBE_SYNC_CIF_ALLOWLIST). */
   cifAllowlist: ReadonlySet<string>;
   now?: () => number;
@@ -79,8 +85,9 @@ const errorCode = (error: unknown) =>
  *  - REIS not reached, refused the token, or outcome unknown (timeout, 5xx, crash): staging back to N with
  *    RETRY_COUNT + 1, trigger stays P; the retry pass sends it again after the delay, up to maxAttempts,
  *    then staging E and trigger E;
- *  - REIS refused the data (4xx) or the KYC cannot be built (missing / invalid data): E at once; a corrected
- *    CIF comes back from FCUBS as a new revision (U);
+ *  - REIS refused the data (4xx): E at once; a corrected CIF comes back from FCUBS as a new revision (U);
+ *  - the KYC cannot be built (missing / invalid data, never sent): E, and checked again every recheck delay, so
+ *    data corrected in FLEXCUBE is sent without a new CIF revision;
  *  - database problem before REIS: the claim is given back, nothing counted.
  * A KYC whose staging table already holds a HIGHER SEQ_NO is never sent (trigger E).
  * Logs carry the KYC reference, SEQ_NO, counts, steps and codes; never a name or a payload.
@@ -102,7 +109,7 @@ export class TriggerSyncService {
   async runOnce(): Promise<TriggerSyncSummary> {
     const runId = randomUUID();
     const summary: TriggerSyncSummary = { found: 0, sent: 0, retrying: 0, failed: 0, skipped: 0 };
-    const { batchSize, cifAllowlist, retryDelayMs } = this.options;
+    const { batchSize, cifAllowlist, retryDelayMs, recheckDelayMs } = this.options;
 
     const recovered = await this.staging.recoverStale(STALE_CLAIM_MINUTES);
     if (recovered > 0) {
@@ -113,6 +120,11 @@ export class TriggerSyncService {
     const work = [
       ...(await this.triggers.findReady(batchSize, corporate)),
       ...(await this.triggers.findRetryDue(batchSize, corporate, Math.ceil(retryDelayMs / 1000))),
+      ...(await this.triggers.findRecheckDue(
+        batchSize,
+        corporate,
+        Math.ceil(recheckDelayMs / 1000),
+      )),
     ].filter((w) => cifAllowlist.size === 0 || cifAllowlist.has(w.customerNo));
     summary.found = work.length;
 
@@ -126,6 +138,7 @@ export class TriggerSyncService {
         kycRefNo: item.kycRefNo,
         seqNo: item.seqNo,
         attempt: item.retryCount + 1,
+        recheck: item.recheck,
         outcome: result.outcome,
       });
       summary[result.outcome]++;
@@ -158,10 +171,13 @@ export class TriggerSyncService {
         return { outcome: 'skipped', technical: false }; // another instance took it
       }
       step = 'claim';
-      if (!(await this.staging.claim(key))) {
-        // Already sent, failed or being processed: for a U trigger that is an error, for a retry someone
-        // else has it.
-        return work.picked
+      const got = work.recheck
+        ? await this.staging.reclaimFailed(key, VALIDATION_MARKER)
+        : await this.staging.claim(key);
+      if (!got) {
+        // Already sent, failed or being processed: for a U trigger that is an error, for a retry or a recheck
+        // someone else has it.
+        return work.picked || work.recheck
           ? { outcome: 'skipped', technical: false }
           : this.refuse(work, runId, 'REVISION_ALREADY_STAGED');
       }
@@ -177,7 +193,8 @@ export class TriggerSyncService {
       if (!picked) {
         step = 'pick';
         if (!(await this.triggers.markPicked(work))) {
-          await this.staging.release(key); // FCUBS moved the trigger or the CIF changed: next pass decides
+          // FCUBS moved the trigger or the CIF changed: next pass decides
+          await (work.recheck ? this.staging.unclaimFailed(key) : this.staging.release(key));
           return { outcome: 'skipped', technical: false };
         }
         picked = true;
@@ -215,13 +232,19 @@ export class TriggerSyncService {
           await (
             picked
               ? this.staging.scheduleRetry(key, { response: { error: code } })
-              : this.staging.release(key)
+              : work.recheck
+                ? this.staging.unclaimFailed(key)
+                : this.staging.release(key)
           ).catch(() => false);
         }
         return { outcome: 'failed', technical: true };
       }
       // The KYC itself cannot be sent (missing details, CIF mismatch): E, a corrected CIF comes back as U.
-      if (claimed) await this.staging.fail(key, { error: code.slice(0, 60) }).catch(() => false);
+      if (claimed) {
+        await this.staging
+          .fail(key, { error: code.slice(0, 60), stage: 'VALIDATION' })
+          .catch(() => false);
+      }
       await this.markError(work);
       return { outcome: 'failed', technical: false };
     }
