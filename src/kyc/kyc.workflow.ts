@@ -33,7 +33,6 @@ const DUPLICATE_REASON: Partial<Record<KycRequestStatus, DuplicateReason>> = {
   [KycRequestStatus.REIS_PENDING]: 'AWAITING_FINAL_STATUS',
   [KycRequestStatus.REIS_REJECTED]: 'ALREADY_REJECTED',
   [KycRequestStatus.FINALIZED]: 'ALREADY_FINALIZED',
-  [KycRequestStatus.FAILED_PERMANENT]: 'PREVIOUS_ATTEMPT_FAILED',
 };
 
 /**
@@ -82,13 +81,13 @@ export class KycWorkflow implements IKycWorkflow {
       );
     }
 
-    // 1. Idempotency: a revision REIS already answered is never sent again. A newer SEQ_NO (amendment) is
-    //    allowed once the previous revision is closed.
+    // 1. Idempotency: a revision REIS accepted (CLEAN / PENDING / REJECT / final) is never sent again. A newer
+    //    SEQ_NO (amendment) is allowed once the previous revision is closed.
     const existing = await this.cases.findByKycRefNo(kycRefNo);
     const amendment = existing !== null && seqNo > existing.seqNo;
-    const reopenable = options.afterRejection
-      ? [...RETRYABLE_STATUSES, KycRequestStatus.FAILED_PERMANENT]
-      : RETRYABLE_STATUSES;
+    // The poller decides when a revision is sent again (staging row claimed): a revision REIS refused
+    // (FAILED_PERMANENT) is sent again when FCUBS sets U or the recheck finds corrected data.
+    const reopenable = [...RETRYABLE_STATUSES, KycRequestStatus.FAILED_PERMANENT];
     if (existing && !amendment && !reopenable.includes(existing.internalRequestStatus)) {
       return this.duplicate(existing);
     }

@@ -105,7 +105,8 @@ export const recheckDueSql = (stagingTable: string, corporate: boolean): string 
     WHERE s.PROCESS_STATUS = :errorStatus
       AND NOT EXISTS (SELECT 1 FROM ${stagingTable} h
                        WHERE h.KYC_REF_NO = s.KYC_REF_NO AND h.SEQ_NO > s.SEQ_NO)
-      AND (INSTR(s.RESPONSE, :validationMarker) > 0 OR INSTR(s.RESPONSE, :rejectedMarker) > 0)
+      AND (INSTR(s.RESPONSE, :validationMarker) > 0 OR INSTR(s.RESPONSE, :rejectedMarker) > 0
+           OR INSTR(s.RESPONSE, :refusedAgainMarker) > 0)
       AND REGEXP_LIKE(s.MSGID, '${OWN_MSGID_PATTERN}', 'i')
       AND (s.RES_DATE IS NULL OR s.RES_DATE < SYSDATE - (:delaySeconds / 86400))
       AND t.READY_TO_SCAN = :errorStatus
@@ -118,6 +119,10 @@ export const recheckDueSql = (stagingTable: string, corporate: boolean): string 
 export const VALIDATION_MARKER = '"stage":"VALIDATION"';
 /** Marker of a REIS refusal of the data (HTTP 4xx other than 401 / 403). */
 export const REJECTED_MARKER = '"error":"REIS_ONBOARDING_HTTP_ERROR"';
+/** Marker of an older poller version that refused to resend a REIS-refused revision. */
+export const REFUSED_AGAIN_MARKER = '"duplicate":"PREVIOUS_ATTEMPT_FAILED"';
+/** Every RESPONSE marker of a row the recheck may read again. */
+export const RECHECK_MARKERS = [VALIDATION_MARKER, REJECTED_MARKER, REFUSED_AGAIN_MARKER] as const;
 
 /** U (or E for a recheck) -> P only while the CIF is still at the staged revision. */
 export const markPickedSql = `UPDATE ${customerTriggerTable} t
@@ -210,6 +215,7 @@ export class CustomerTriggerSource {
       errorStatus: TRIGGER_ERROR,
       validationMarker: VALIDATION_MARKER,
       rejectedMarker: REJECTED_MARKER,
+      refusedAgainMarker: REFUSED_AGAIN_MARKER,
       delaySeconds,
       maxRows,
     });

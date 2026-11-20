@@ -34,8 +34,8 @@ RECEIVED -> SUBMITTED_TO_REIS -+-> REIS_CLEAN / REIS_REJECTED
 VALIDATION_FAILED (bad input, REIS not called)
 ```
 
-The same revision is sent again only from `RECEIVED`, `SUBMITTED_TO_REIS`, `VALIDATION_FAILED`, `FAILED_RETRYABLE` or
-`DELIVERY_UNCERTAIN` (`reopenForRetry`). A higher `SEQ_NO` (CIF modified) replaces a closed previous revision
+The same revision is sent again only from `RECEIVED`, `SUBMITTED_TO_REIS`, `VALIDATION_FAILED`, `FAILED_RETRYABLE`,
+`DELIVERY_UNCERTAIN` or `FAILED_PERMANENT` (`reopenForRetry`; the poller decides when). A higher `SEQ_NO` (CIF modified) replaces a closed previous revision
 (`reopenForAmendment`).
 
 ## Failure classification

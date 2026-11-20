@@ -4,8 +4,6 @@ import { KycSubmissionResult } from './kyc-submission.result';
 export interface SubmitOptions {
   /** Staging SEQ_NO of the submission (= STTM_CUSTOMER.MOD_NO). A higher one than stored is an amendment. */
   seqNo: number;
-  /** Recheck after REIS refused the data: a FAILED_PERMANENT case of this revision may be sent again. */
-  afterRejection?: boolean;
 }
 
 /**

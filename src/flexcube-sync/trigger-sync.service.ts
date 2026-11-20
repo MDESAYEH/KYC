@@ -4,9 +4,8 @@ import { KycRequestStatus } from '../common/kyc-status';
 import { oraCode, oracleErrorCode } from '../flexcube/oracle-error';
 import {
   CustomerTriggerSource,
-  REJECTED_MARKER,
+  RECHECK_MARKERS,
   TriggerWork,
-  VALIDATION_MARKER,
 } from '../flexcube/source/customer-trigger.source';
 import { FlexcubeKycSource } from '../flexcube/source/flexcube-kyc-source';
 import { InvalidSqlBindsError } from '../flexcube/staging/sql-binds';
@@ -175,7 +174,7 @@ export class TriggerSyncService {
       }
       step = 'claim';
       const got = work.recheck
-        ? await this.staging.reclaimFailed(key, [VALIDATION_MARKER, REJECTED_MARKER])
+        ? await this.staging.reclaimFailed(key, RECHECK_MARKERS)
         : await this.staging.claim(key);
       if (!got) {
         // Already sent, failed or being processed: for a U trigger that is an error, for a retry or a recheck
@@ -210,10 +209,7 @@ export class TriggerSyncService {
       }
 
       step = 'submit';
-      const result = await this.workflow.submit(request, {
-        seqNo: work.seqNo,
-        afterRejection: work.previousRequest !== undefined,
-      });
+      const result = await this.workflow.submit(request, { seqNo: work.seqNo });
       step = 'complete';
       return { outcome: await this.record(work, key, result), technical: false };
     } catch (error) {

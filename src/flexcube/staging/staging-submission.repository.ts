@@ -86,17 +86,22 @@ export class StagingSubmissionRepository {
    * E -> W for a recheck: only a row that failed validation or whose data REIS refused (RESPONSE carries one of
    * the markers). RETRY_COUNT restarts at 0.
    */
-  async reclaimFailed(key: StagingKey, markers: [string, string]): Promise<boolean> {
+  async reclaimFailed(
+    key: StagingKey,
+    markers: readonly [string, string, string],
+  ): Promise<boolean> {
     const { rowsAffected } = await this.db.execute(
       `UPDATE ${this.table} SET PROCESS_STATUS = :targetStatus, REQ_DATE = SYSDATE, RETRY_COUNT = 0 ` +
         `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :sourceStatus ` +
-        `AND (INSTR(RESPONSE, :validationMarker) > 0 OR INSTR(RESPONSE, :rejectedMarker) > 0)`,
+        `AND (INSTR(RESPONSE, :validationMarker) > 0 OR INSTR(RESPONSE, :rejectedMarker) > 0 ` +
+        `OR INSTR(RESPONSE, :refusedAgainMarker) > 0)`,
       {
         ...key,
         targetStatus: this.inProgress,
         sourceStatus: StagingProcessStatus.ERROR,
         validationMarker: markers[0],
         rejectedMarker: markers[1],
+        refusedAgainMarker: markers[2],
       },
     );
     return rowsAffected === 1;

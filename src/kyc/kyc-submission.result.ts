@@ -13,9 +13,7 @@ export type DuplicateReason =
   /** PENDING at REIS: waiting for the /customerStatus callback. */
   | 'AWAITING_FINAL_STATUS'
   | 'ALREADY_REJECTED'
-  | 'ALREADY_FINALIZED'
-  /** REIS refused this revision permanently; a corrected CIF (new SEQ_NO) is needed. */
-  | 'PREVIOUS_ATTEMPT_FAILED';
+  | 'ALREADY_FINALIZED';
 
 /** REIS answered CLEAN, PENDING or REJECT. All three are normal, distinct outcomes. */
 export interface SubmissionOnboarded {
