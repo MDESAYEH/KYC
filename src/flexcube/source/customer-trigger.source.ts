@@ -131,7 +131,7 @@ const toWork = (r: SqlRow, picked: boolean, recheck = false): TriggerWork => ({
   kycRefNo: String(r.KYC_REF_NO),
   seqNo: Number(r.CIF_MOD_NO),
   customerType: r.KYC_CUST_TYPE === 'C' ? 'CORPORATE' : 'INDIVIDUAL',
-  stagingRows: picked ? 1 : Number(r.STAGING_ROWS ?? 0),
+  stagingRows: picked || recheck ? 1 : Number(r.STAGING_ROWS ?? 0),
   higherRows: picked || recheck ? 0 : Number(r.HIGHER_ROWS ?? 0),
   retryCount: recheck ? 0 : Number(r.RETRY_COUNT ?? 0),
   picked,
