@@ -117,6 +117,19 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
     return this.require(entity.internalId);
   }
 
+  async findByReisCustomerId(reisCustomerId: number): Promise<KycCase | null> {
+    const rows = await this.dataSource
+      .getRepository(KycCaseEntity)
+      .createQueryBuilder('c')
+      .where('c.reis_id = :asText OR c.reis_customer_id = :asNumber', {
+        asText: String(reisCustomerId),
+        asNumber: reisCustomerId,
+      })
+      .limit(2)
+      .getMany();
+    return rows.length === 1 ? toDomain(rows[0]) : null;
+  }
+
   async findByKycRefNo(kycRefNo: string): Promise<KycCase | null> {
     return this.findOne({ kycRefNo });
   }

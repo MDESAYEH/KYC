@@ -29,6 +29,11 @@ export interface CustomerStatusRequest {
   body: unknown;
 }
 
+const toInt = (v: unknown): number | null => {
+  const n = typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v) : v;
+  return typeof n === 'number' && Number.isInteger(n) ? n : null;
+};
+
 const asString = (v: unknown): string | null => (typeof v === 'string' ? v : null);
 
 /**
@@ -79,12 +84,22 @@ export class CustomerStatusService {
     // leading zeros): taken as text; correlation then also tries the CIF without leading zeros.
     const idKey = Object.keys(withStatus).find((k) => /^system_?id$/i.test(k));
     const idValue = idKey === undefined ? undefined : withStatus[idKey];
-    const raw =
+    let raw: Record<string, unknown> =
       typeof idValue === 'number' && Number.isInteger(idValue)
         ? { ...withStatus, systemId: String(idValue) }
         : idKey !== undefined && idKey !== 'systemId'
           ? { ...withStatus, systemId: idValue }
           : withStatus;
+    // REIS UAT sends no systemId (20/11/2026): { _hash, status, customerId, systemName, ServiceType,
+    // businessKey }. The case is then found by the REIS customer id we stored from the onboarding answer.
+    if (raw.systemId === undefined && isObject) {
+      const reisCustomerId = toInt(raw.customerId) ?? toInt(raw.businessKey);
+      const known =
+        reisCustomerId === null ? null : await this.cases.findByReisCustomerId(reisCustomerId);
+      if (known?.reisSystemId) {
+        raw = { ...raw, systemId: known.reisSystemId, customerId: reisCustomerId };
+      }
+    }
     const errors =
       isObject && !statusConflict
         ? await validate(plainToInstance(CustomerStatusDto, raw), { forbidUnknownValues: true })

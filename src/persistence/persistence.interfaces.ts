@@ -44,6 +44,11 @@ export interface IKycCaseRepository {
   create(input: NewKycCase): Promise<KycCase>;
 
   findByKycRefNo(kycRefNo: string): Promise<KycCase | null>;
+  /**
+   * The single case whose REIS customer (reis_id from the onboarding answer, or reis_customer_id) is this id;
+   * null when none or more than one. Used when a callback carries no systemId (REIS UAT, 20/11/2026).
+   */
+  findByReisCustomerId(reisCustomerId: number): Promise<KycCase | null>;
 
   updateInternalStatus(internalId: string, status: KycRequestStatus): Promise<KycCase>;
 
