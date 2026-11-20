@@ -43,6 +43,8 @@ export interface SubmissionFailed {
   stage: FailureStage;
   /** Stable machine-readable code (also stored as last_error_code). */
   code: string;
+  /** What failed, e.g. 'Required field "BIRTH_DATE" is missing or blank'. Names fields, never values. */
+  message: string;
   /** Diagnostic only: true when the onboarding request may have been received by REIS. */
   requestMayHaveReachedReis: boolean;
   persistedStatus: KycRequestStatus;

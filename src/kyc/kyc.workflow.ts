@@ -326,6 +326,7 @@ export class KycWorkflow implements IKycWorkflow {
       internalId: saved?.internalId,
       stage: c.stage,
       code: c.code,
+      detail: c.message,
       persistedStatus: c.persist,
       requestMayHaveReachedReis: c.requestMayHaveReachedReis,
     });
@@ -333,6 +334,7 @@ export class KycWorkflow implements IKycWorkflow {
       outcome: 'FAILED',
       stage: c.stage,
       code: c.code,
+      message: c.message,
       requestMayHaveReachedReis: c.requestMayHaveReachedReis,
       persistedStatus: c.persist,
       kycCase: saved,

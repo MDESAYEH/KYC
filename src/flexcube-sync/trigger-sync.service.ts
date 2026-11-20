@@ -242,7 +242,7 @@ export class TriggerSyncService {
         });
         return 'sent';
       case 'FAILED': {
-        const response = { error: result.code, stage: result.stage };
+        const response = { error: result.code, stage: result.stage, detail: result.message };
         if (RETRYABLE.has(result.persistedStatus)) {
           return this.retryOrGiveUp(work, key, { request: result.reisRequest, response });
         }
