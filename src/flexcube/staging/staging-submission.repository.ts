@@ -137,6 +137,22 @@ export class StagingSubmissionRepository {
     return rowsAffected === 1;
   }
 
+  /** S row that only says {"duplicate":...} (recreated by hand): RESPONSE replaced by the stored REIS answer. */
+  async repairDuplicateResponse(key: StagingKey, response: object): Promise<boolean> {
+    const { rowsAffected } = await this.db.execute(
+      `UPDATE ${this.table} SET RESPONSE = :responseJson ` +
+        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :doneStatus ` +
+        `AND INSTR(RESPONSE, :duplicateMarker) > 0`,
+      {
+        ...key,
+        responseJson: JSON.stringify(response),
+        doneStatus: StagingProcessStatus.SUCCESS,
+        duplicateMarker: '{"duplicate":',
+      },
+    );
+    return rowsAffected === 1;
+  }
+
   /** W -> E: a recheck stopped before REIS; the row keeps its previous RESPONSE. */
   async unclaimFailed(key: StagingKey): Promise<boolean> {
     return this.move(key, this.inProgress, StagingProcessStatus.ERROR, 'RES_DATE = SYSDATE');

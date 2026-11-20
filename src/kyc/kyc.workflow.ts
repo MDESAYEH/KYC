@@ -234,6 +234,17 @@ export class KycWorkflow implements IKycWorkflow {
     });
   }
 
+  async storedAnswer(kycRefNo: string, seqNo: number): Promise<object | null> {
+    const c = await this.cases.findByKycRefNo(kycRefNo);
+    if (!c || c.seqNo !== seqNo || c.reisOnboardingStatus === null) return null;
+    return {
+      status: c.reisOnboardingStatus,
+      riskCalculationId: c.riskCalculationId,
+      reisId: c.reisId,
+      restoredFromCase: true,
+    };
+  }
+
   async preview(request: FlexcubeCustomerRequest): Promise<object> {
     return this.toReisRequest(this.mapper.map(request));
   }

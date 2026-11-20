@@ -198,8 +198,11 @@ export class TriggerSyncService {
         if (work.picked || work.recheck) return { outcome: 'skipped', technical: false };
         if (await this.staging.alreadySent(key)) {
           // U again for a revision REIS already answered: nothing is sent twice. The trigger goes back to P (done)
-          // and a PENDING answer stored before REIS_FINAL_STATUS was written gets PENDING now.
+          // and a PENDING answer stored before REIS_FINAL_STATUS was written gets PENDING now; a row that only says
+          // {"duplicate":...} gets REIS' answer back from the local case.
           await this.staging.markPendingAnswer(key);
+          const answer = await this.workflow.storedAnswer(work.kycRefNo, work.seqNo);
+          if (answer) await this.staging.repairDuplicateResponse(key, answer);
           await this.triggers.markPicked(work);
           this.logger.warn({
             event: 'flexcube.trigger.alreadySent',

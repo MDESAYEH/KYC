@@ -14,4 +14,6 @@ export interface IKycWorkflow {
   submit(request: FlexcubeCustomerRequest, options: SubmitOptions): Promise<KycSubmissionResult>;
   /** The REIS request the submission would send (mapping + transformation only, nothing stored or sent). */
   preview(request: FlexcubeCustomerRequest): Promise<object>;
+  /** REIS' onboarding answer kept on the local case of this revision, or null. */
+  storedAnswer(kycRefNo: string, seqNo: number): Promise<object | null>;
 }
