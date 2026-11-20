@@ -78,6 +78,7 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   await step('source.load corporate', () => source.load({ ...key, customerType: 'CORPORATE' }));
 
   const trigger = new CustomerTriggerSource(rec, opts.stagingTable, since);
+  const triggerNoCutOff = new CustomerTriggerSource(rec, opts.stagingTable);
   const work: TriggerWork = {
     customerNo: 'CATALOG',
     ...key,
@@ -89,6 +90,7 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   };
   await step('trigger.findReady, individuals only', () => trigger.findReady(1, false));
   await step('trigger.findReady', () => trigger.findReady(1, true));
+  await step('trigger.findReady, no cut-off', () => triggerNoCutOff.findReady(1, true));
   await step('trigger.findRetryDue, individuals only', () => trigger.findRetryDue(1, false, 60));
   await step('trigger.findRetryDue', () => trigger.findRetryDue(1, true, 60));
   await step('trigger.markPicked', () => trigger.markPicked(work));

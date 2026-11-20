@@ -38,8 +38,8 @@ export interface AppConfig {
     /** Maximum KYCs taken per pass. */
     pollBatchSize: number;
     /**
-     * Cut-off (FLEXCUBE_SYNC_START_DATE, ISO date/timestamp) compared with STTM_KYC_MASTER.MAKER_DT_STAMP.
-     * Mandatory when polling is enabled (validated at startup).
+     * Optional cut-off (FLEXCUBE_SYNC_START_DATE, ISO date/timestamp) compared with STTM_KYC_MASTER.MAKER_DT_STAMP.
+     * Empty = every U row of the trigger table (FCUBS sets U only for authorized new / modified CIFs).
      */
     syncStartDate: string | undefined;
     /** Staging PROCESS_STATUS of a claimed row (FLEXCUBE_STAGING_STATUS_IN_PROGRESS, default W). */

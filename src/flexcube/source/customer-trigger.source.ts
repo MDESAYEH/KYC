@@ -40,8 +40,12 @@ export interface TriggerWork {
 
 const types = (corporate: boolean) => (corporate ? "('R', 'C')" : "('R')");
 
-/** U rows with the CIF revision and the open KYC master row created since the cut-off. */
-export const readyCustomersSql = (stagingTable: string, corporate: boolean): string =>
+/** U rows with the CIF revision and the open KYC master row (created since the cut-off, when one is set). */
+export const readyCustomersSql = (
+  stagingTable: string,
+  corporate: boolean,
+  cutOff: boolean,
+): string =>
   `SELECT t.CUSTOMER_NO, t.KYC_REF_NO, c.MOD_NO AS CIF_MOD_NO, m.KYC_CUST_TYPE,
           (SELECT COUNT(*) FROM ${stagingTable} s
             WHERE s.KYC_REF_NO = t.KYC_REF_NO AND s.SEQ_NO = c.MOD_NO) AS STAGING_ROWS,
@@ -55,7 +59,7 @@ export const readyCustomersSql = (stagingTable: string, corporate: boolean): str
     WHERE t.READY_TO_SCAN = :readyStatus
       AND m.RECORD_STAT = 'O'
       AND m.KYC_CUST_TYPE IN ${types(corporate)}
-      AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS')
+      ${cutOff ? `AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS')` : ''}
     ORDER BY t.KYC_REF_NO
     FETCH FIRST :maxRows ROWS ONLY`;
 
@@ -105,7 +109,7 @@ const toWork = (r: SqlRow, picked: boolean): TriggerWork => ({
 });
 
 export class CustomerTriggerSource {
-  private readonly since: string;
+  private readonly since: string | undefined;
   private readonly sql: {
     ready: Record<'corporate' | 'individual', string>;
     retry: Record<'corporate' | 'individual', string>;
@@ -114,16 +118,19 @@ export class CustomerTriggerSource {
   constructor(
     private readonly db: IFlexcubeSqlExecutor,
     stagingTable: string,
-    syncStartDate: string,
+    /** FLEXCUBE_SYNC_START_DATE (optional): only KYCs created on / after it. Undefined = no cut-off. */
+    syncStartDate?: string,
   ) {
-    const since = normalizeSyncStartDate(syncStartDate);
-    if (since === undefined) throw new Error('FLEXCUBE_SYNC_START_DATE is required');
-    this.since = since;
+    if (syncStartDate !== undefined) {
+      this.since = normalizeSyncStartDate(syncStartDate);
+      if (this.since === undefined) throw new Error('FLEXCUBE_SYNC_START_DATE is not a valid date');
+    }
+    const cutOff = this.since !== undefined;
     const table = assertSafeTableName(stagingTable);
     this.sql = {
       ready: {
-        corporate: readyCustomersSql(table, true),
-        individual: readyCustomersSql(table, false),
+        corporate: readyCustomersSql(table, true, cutOff),
+        individual: readyCustomersSql(table, false, cutOff),
       },
       retry: { corporate: retryDueSql(table, true), individual: retryDueSql(table, false) },
     };
@@ -133,7 +140,7 @@ export class CustomerTriggerSource {
   async findReady(maxRows: number, corporate: boolean): Promise<TriggerWork[]> {
     const rows = await this.db.query(this.sql.ready[corporate ? 'corporate' : 'individual'], {
       readyStatus: TRIGGER_READY,
-      since: this.since,
+      ...(this.since !== undefined ? { since: this.since } : {}),
       maxRows,
     });
     return rows.map((r) => toWork(r, false));

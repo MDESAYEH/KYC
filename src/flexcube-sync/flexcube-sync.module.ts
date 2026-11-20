@@ -44,7 +44,7 @@ export interface TriggerSyncDeps {
 
 /**
  * The trigger-table poller, or null when FLEXCUBE_POLL_ENABLED is not true. Startup fails on a missing FLEXCUBE
- * database, a missing / invalid cut-off date or an invalid CIF allow-list.
+ * database, an invalid cut-off date or an invalid CIF allow-list.
  */
 export function createTriggerSync(
   executor: IFlexcubeSqlExecutor | null,
@@ -57,9 +57,12 @@ export function createTriggerSync(
       'FLEXCUBE_POLL_ENABLED=true requires the FLEXCUBE database (FLEXCUBE_DB_*)',
     );
   }
-  if (normalizeSyncStartDate(flexcube.syncStartDate) === undefined) {
+  if (
+    flexcube.syncStartDate !== undefined &&
+    normalizeSyncStartDate(flexcube.syncStartDate) === undefined
+  ) {
     throw new FlexcubeSyncConfigError(
-      'FLEXCUBE_POLL_ENABLED=true requires FLEXCUBE_SYNC_START_DATE as an ISO date or timestamp',
+      'FLEXCUBE_SYNC_START_DATE must be an ISO date or timestamp (or empty for no cut-off)',
     );
   }
   if (flexcube.syncCifAllowlist.some((cif) => !CIF_PATTERN.test(cif))) {
@@ -67,9 +70,8 @@ export function createTriggerSync(
       'FLEXCUBE_SYNC_CIF_ALLOWLIST must list CIFs (comma separated)',
     );
   }
-  const syncStartDate = flexcube.syncStartDate as string;
   return new TriggerSyncService(
-    new CustomerTriggerSource(executor, flexcube.stagingTable, syncStartDate),
+    new CustomerTriggerSource(executor, flexcube.stagingTable, flexcube.syncStartDate),
     new FlexcubeKycSource(executor, flexcube.keypersonTypeColumn),
     new StagingSubmissionRepository(
       executor,

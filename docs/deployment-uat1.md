@@ -35,7 +35,7 @@ An older drop-in `/etc/systemd/system/kyc.service.d/ca.conf` setting the same va
 ```
 FLEXCUBE_POLL_ENABLED=true
 FLEXCUBE_POLL_INTERVAL_MS=10000
-FLEXCUBE_SYNC_START_DATE=<cut-off>
+FLEXCUBE_SYNC_START_DATE=            # optional cut-off; empty = every U row
 FLEXCUBE_SYNC_MAX_ATTEMPTS=5
 FLEXCUBE_SYNC_RETRY_DELAY_MS=60000
 FLEXCUBE_SYNC_CIF_ALLOWLIST=            # empty = every CIF FCUBS sets to U

@@ -12,7 +12,7 @@ previous one ended, so two passes never overlap. A failing pass is logged and th
 1. **Stale claims**: our rows (UUID `MSGID`) left at `W` for more than 5 minutes (the process died, possibly during the
    REIS call) go back to `N` with `RETRY_COUNT + 1`.
 2. **New revisions**: `STTM_CUSTOMER_CUSTOM` rows at `U`, joined to `STTM_CUSTOMER` (CIF `MOD_NO` = staging `SEQ_NO`) and
-   the open `STTM_KYC_MASTER` row created since `FLEXCUBE_SYNC_START_DATE`.
+   the open `STTM_KYC_MASTER` row (created since `FLEXCUBE_SYNC_START_DATE` when it is set).
 3. **Retries due**: our `N` rows with `RETRY_COUNT > 0`, last attempt older than `FLEXCUBE_SYNC_RETRY_DELAY_MS`, trigger
    still `P` and the CIF still at that `MOD_NO`.
 4. Optional filter `FLEXCUBE_SYNC_CIF_ALLOWLIST`. Corporates only while the key-person type column is proven to exist.
@@ -46,7 +46,7 @@ Three database failures in a row end the pass; the next pass starts again.
 ## Configuration
 
 See [.env.example](../.env.example): `FLEXCUBE_POLL_ENABLED`, `FLEXCUBE_POLL_INTERVAL_MS` (default 10000, min 1000),
-`FLEXCUBE_POLL_BATCH_SIZE`, `FLEXCUBE_SYNC_START_DATE` (mandatory), `FLEXCUBE_SYNC_MAX_ATTEMPTS` (default 5),
+`FLEXCUBE_POLL_BATCH_SIZE`, `FLEXCUBE_SYNC_START_DATE` (optional cut-off), `FLEXCUBE_SYNC_MAX_ATTEMPTS` (default 5),
 `FLEXCUBE_SYNC_RETRY_DELAY_MS` (default 60000), `FLEXCUBE_SYNC_CIF_ALLOWLIST` (empty = all),
 `FLEXCUBE_STAGING_STATUS_IN_PROGRESS` (default `W`), `FLEXCUBE_KEYPERSON_TYPE_COLUMN` (default `KYC_KEYPERSON_TYPE`).
 The database user needs SELECT on the STTM tables, INSERT / UPDATE on the staging table and UPDATE on
