@@ -19,6 +19,8 @@ import { IKycWorkflow } from '../kyc/kyc.interfaces';
 import { DuplicateReason, KycSubmissionResult } from '../kyc/kyc-submission.result';
 import { requireCif } from '../reis/cif-identity';
 import { ReisOnboardingStatus } from '../reis/reis-status';
+import { StagingFinalStatus, toStagingFinalStatus } from '../flexcube/staging/flexcube-staging';
+import { KycCase } from '../persistence/kyc-case';
 
 export interface TriggerSyncSummary {
   found: number;
@@ -67,6 +69,21 @@ export class CifSourcesDisagreeError extends Error {
   constructor() {
     super('CUSTOMER_NO of the KYC details differs from the trigger row');
     this.name = 'CifSourcesDisagreeError';
+  }
+}
+
+/** The REIS_FINAL_STATUS word a case stands for: the final decision, else the onboarding answer. */
+function stagingWordOf(c: KycCase): string | undefined {
+  if (c.finalStatus !== null) return toStagingFinalStatus(c.finalStatus);
+  switch (c.reisOnboardingStatus) {
+    case ReisOnboardingStatus.CLEAN:
+      return StagingFinalStatus.CLEAN;
+    case ReisOnboardingStatus.REJECT:
+      return StagingFinalStatus.BLOCKED;
+    case ReisOnboardingStatus.PENDING:
+      return StagingFinalStatus.PENDING;
+    default:
+      return undefined;
   }
 }
 
@@ -289,23 +306,16 @@ export class TriggerSyncService {
   ): Promise<Outcome> {
     switch (result.outcome) {
       case 'ONBOARDED': {
-        const done = {
-          status: StagingProcessStatus.SUCCESS,
-          request: result.reisRequest,
-          response: result.reisResponse,
-        } as const;
-        if (result.reisOnboardingStatus !== ReisOnboardingStatus.PENDING) {
-          await this.staging.complete(key, done);
-          return 'sent';
-        }
-        try {
-          await this.staging.complete(key, { ...done, pending: true });
-        } catch (error) {
-          // The table refuses PENDING (CHECK constraint): store the answer without it, never lose it.
-          if (oracleErrorCode(error) === undefined) throw error;
-          this.logger.warn({ event: 'flexcube.staging.pendingRefused', error: oraCode(error) });
-          await this.staging.complete(key, done);
-        }
+        const pending = result.reisOnboardingStatus === ReisOnboardingStatus.PENDING;
+        await this.completeWithFinal(
+          key,
+          {
+            status: StagingProcessStatus.SUCCESS,
+            request: result.reisRequest,
+            response: result.reisResponse,
+          },
+          pending ? StagingFinalStatus.PENDING : undefined,
+        );
         return 'sent';
       }
       case 'FAILED': {
@@ -322,15 +332,47 @@ export class TriggerSyncService {
         return 'failed';
       }
       case 'DUPLICATE': {
-        const done = ALREADY_AT_REIS.has(result.reason);
-        await this.staging.complete(key, {
-          status: done ? StagingProcessStatus.SUCCESS : StagingProcessStatus.ERROR,
-          response: { duplicate: result.reason },
-        });
-        if (done) return 'sent';
-        await this.markError(work);
-        return 'failed';
+        if (!ALREADY_AT_REIS.has(result.reason)) {
+          await this.staging.complete(key, {
+            status: StagingProcessStatus.ERROR,
+            response: { duplicate: result.reason },
+          });
+          await this.markError(work);
+          return 'failed';
+        }
+        // REIS already answered this revision (the staging row was recreated): restore its answer from the case.
+        const c = result.kycCase;
+        await this.completeWithFinal(
+          key,
+          {
+            status: StagingProcessStatus.SUCCESS,
+            response: {
+              status: c.reisOnboardingStatus,
+              riskCalculationId: c.riskCalculationId,
+              reisId: c.reisId,
+              restoredFromCase: true,
+            },
+          },
+          stagingWordOf(c),
+        );
+        return 'sent';
       }
+    }
+  }
+
+  /** S with REIS_FINAL_STATUS (when given); if the table refuses that value, the row is stored without it. */
+  private async completeWithFinal(
+    key: StagingKey,
+    done: { status: StagingProcessStatus.SUCCESS; request?: object; response?: object },
+    finalStatus: string | undefined,
+  ): Promise<void> {
+    if (finalStatus === undefined) return this.staging.complete(key, done);
+    try {
+      await this.staging.complete(key, { ...done, finalStatus });
+    } catch (error) {
+      if (oracleErrorCode(error) === undefined) throw error;
+      this.logger.warn({ event: 'flexcube.staging.finalStatusRefused', error: oraCode(error) });
+      await this.staging.complete(key, done);
     }
   }
 

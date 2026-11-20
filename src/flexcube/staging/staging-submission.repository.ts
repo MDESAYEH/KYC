@@ -119,17 +119,19 @@ export class StagingSubmissionRepository {
     return Number(rows[0]?.N) > 0;
   }
 
-  /** S row whose stored REIS answer is PENDING and REIS_FINAL_STATUS still empty -> PENDING. */
+  /** S row whose stored REIS answer is PENDING (or awaiting the decision) and REIS_FINAL_STATUS empty -> PENDING. */
   async markPendingAnswer(key: StagingKey): Promise<boolean> {
     const { rowsAffected } = await this.db.execute(
       `UPDATE ${this.table} SET REIS_FINAL_STATUS = :pendingStatus ` +
         `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :doneStatus ` +
-        `AND REIS_FINAL_STATUS IS NULL AND INSTR(RESPONSE, :pendingAnswer) > 0`,
+        `AND REIS_FINAL_STATUS IS NULL ` +
+        `AND (INSTR(RESPONSE, :pendingAnswer) > 0 OR INSTR(RESPONSE, :awaitingAnswer) > 0)`,
       {
         ...key,
         pendingStatus: StagingFinalStatus.PENDING,
         doneStatus: StagingProcessStatus.SUCCESS,
         pendingAnswer: '"status":"PENDING"',
+        awaitingAnswer: '"duplicate":"AWAITING_FINAL_STATUS"',
       },
     );
     return rowsAffected === 1;
@@ -152,8 +154,8 @@ export class StagingSubmissionRepository {
       status: StagingProcessStatus.SUCCESS | StagingProcessStatus.ERROR;
       request?: object;
       response?: object;
-      /** REIS answered PENDING: REIS_FINAL_STATUS = PENDING unless a decision is already stored. */
-      pending?: boolean;
+      /** REIS_FINAL_STATUS to write unless one is already stored (PENDING, or a decision restored from the case). */
+      finalStatus?: string;
     },
   ): Promise<void> {
     await this.finish(key, outcome.status, outcome, outcome.status === StagingProcessStatus.ERROR);
@@ -208,7 +210,7 @@ export class StagingSubmissionRepository {
   private async finish(
     key: StagingKey,
     target: string,
-    data: { request?: object; response?: object; pending?: boolean },
+    data: { request?: object; response?: object; finalStatus?: string },
     countAttempt: boolean,
   ): Promise<void> {
     const set = ['PROCESS_STATUS = :targetStatus'];
@@ -226,9 +228,9 @@ export class StagingSubmissionRepository {
       set.push('RESPONSE = :responseJson');
       binds.responseJson = JSON.stringify(data.response);
     }
-    if (data.pending) {
-      set.push('REIS_FINAL_STATUS = NVL(REIS_FINAL_STATUS, :pendingStatus)');
-      binds.pendingStatus = StagingFinalStatus.PENDING;
+    if (data.finalStatus !== undefined) {
+      set.push('REIS_FINAL_STATUS = NVL(REIS_FINAL_STATUS, :finalWord)');
+      binds.finalWord = data.finalStatus;
     }
     const { rowsAffected } = await this.db.execute(
       `UPDATE ${this.table} SET ${set.join(', ')}, ` +

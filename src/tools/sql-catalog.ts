@@ -129,7 +129,7 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
       status: StagingProcessStatus.SUCCESS,
       request: {},
       response: {},
-      pending: true,
+      finalStatus: 'PENDING',
     }),
   );
   await step('staging.complete (response only)', () =>
