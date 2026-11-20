@@ -67,5 +67,5 @@ Deployment on UAT1: [docs/deployment-uat1.md](docs/deployment-uat1.md).
 
 - Credentials only in `.env`; TLS certificate validation is never disabled.
 - FLEXCUBE SQL: SELECT, plus INSERT / UPDATE on the staging table and UPDATE of `READY_TO_SCAN`; never DELETE; binds only.
-- Logs and stored errors carry codes and counts, never customer values, payloads or tokens.
+- Logs carry the KYC reference, codes and counts; never names, payloads or tokens.
 - The webhook denies everything unless `WEBHOOK_SECURITY_MODE=bearer` and a token are set.

@@ -47,7 +47,7 @@ const DUPLICATE_REASON: Partial<Record<KycRequestStatus, DuplicateReason>> = {
  *   when (attempt limit and delay).
  * - A higher SEQ_NO (CIF modified) replaces a closed previous revision.
  * - Validation / mapping errors happen before REIS is called.
- * - Only classification codes and safe text are persisted or logged, never customer values or REIS free text.
+ * - Logs carry the KYC reference, codes and statuses; never names, payloads or REIS free text.
  */
 export class KycWorkflow implements IKycWorkflow {
   private readonly logger = new Logger(KycWorkflow.name);
@@ -179,6 +179,8 @@ export class KycWorkflow implements IKycWorkflow {
     const final = await this.notifyFlexcubeIfFinal(updated);
     this.logger.log({
       event: 'kyc.submission.onboarded',
+      kycRefNo: updated.kycRefNo,
+      seqNo: updated.seqNo,
       internalId: updated.internalId,
       reisOnboardingStatus: response.status,
       internalRequestStatus: updated.internalRequestStatus,
@@ -254,6 +256,8 @@ export class KycWorkflow implements IKycWorkflow {
     const reason = DUPLICATE_REASON[kycCase.internalRequestStatus] ?? 'IN_PROGRESS';
     this.logger.warn({
       event: 'kyc.submission.duplicate',
+      kycRefNo: kycCase.kycRefNo,
+      seqNo: kycCase.seqNo,
       internalId: kycCase.internalId,
       reason,
       internalRequestStatus: kycCase.internalRequestStatus,
@@ -317,6 +321,8 @@ export class KycWorkflow implements IKycWorkflow {
     }
     this.logger.warn({
       event: 'kyc.submission.failed',
+      kycRefNo: saved?.kycRefNo,
+      seqNo: saved?.seqNo,
       internalId: saved?.internalId,
       stage: c.stage,
       code: c.code,

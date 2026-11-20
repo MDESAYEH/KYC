@@ -83,7 +83,7 @@ const errorCode = (error: unknown) =>
  *    CIF comes back from FCUBS as a new revision (U);
  *  - database problem before REIS: the claim is given back, nothing counted.
  * A KYC whose staging table already holds a HIGHER SEQ_NO is never sent (trigger E).
- * Logs carry counts, steps and codes only, never a CIF, a name or a payload.
+ * Logs carry the KYC reference, SEQ_NO, counts, steps and codes; never a name or a payload.
  */
 export class TriggerSyncService {
   private readonly logger = new Logger(TriggerSyncService.name);
@@ -120,6 +120,14 @@ export class TriggerSyncService {
     for (const item of work) {
       if (technical >= MAX_TECHNICAL_FAILURES) break;
       const result = await this.processOne(item, runId);
+      this.logger.log({
+        event: 'flexcube.trigger.item',
+        runId,
+        kycRefNo: item.kycRefNo,
+        seqNo: item.seqNo,
+        attempt: item.retryCount + 1,
+        outcome: result.outcome,
+      });
       summary[result.outcome]++;
       technical = result.technical ? technical + 1 : 0;
     }
@@ -181,7 +189,14 @@ export class TriggerSyncService {
       return { outcome: await this.record(work, key, result), technical: false };
     } catch (error) {
       const code = errorCode(error);
-      this.logger.error({ event: 'flexcube.trigger.failed', runId, step, error: code });
+      this.logger.error({
+        event: 'flexcube.trigger.failed',
+        runId,
+        kycRefNo: work.kycRefNo,
+        seqNo: work.seqNo,
+        step,
+        error: code,
+      });
       if (step === 'submit') {
         // REIS may or may not have been reached: another attempt later.
         const outcome = await this.retryOrGiveUp(work, key, {
@@ -276,7 +291,13 @@ export class TriggerSyncService {
     runId: string,
     reason: string,
   ): Promise<{ outcome: Outcome; technical: boolean }> {
-    this.logger.warn({ event: 'flexcube.trigger.refused', runId, reason });
+    this.logger.warn({
+      event: 'flexcube.trigger.refused',
+      runId,
+      kycRefNo: work.kycRefNo,
+      seqNo: work.seqNo,
+      reason,
+    });
     await this.markError(work);
     return { outcome: 'failed', technical: false };
   }

@@ -16,4 +16,4 @@ Read `docs/STATUS.md` first.
 - Before delivery: `npx tsc --noEmit`, `npm run lint`, `npm run build`.
 - Every SQL statement must be in `src/tools/sql-catalog.ts` so `npm run check:oracle-sql` parses it on UAT1.
 - Oracle bind names must not be reserved words (ORA-01745); CLOB values are bound directly, never inside a SQL function.
-- Logs carry codes and counts only, never customer data.
+- Logs may carry the KYC reference and SEQ_NO, codes and counts; never names, payloads or tokens.

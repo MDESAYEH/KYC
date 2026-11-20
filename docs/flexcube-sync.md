@@ -52,11 +52,13 @@ See [.env.example](../.env.example): `FLEXCUBE_POLL_ENABLED`, `FLEXCUBE_POLL_INT
 The database user needs SELECT on the STTM tables, INSERT / UPDATE on the staging table and UPDATE on
 `STTM_CUSTOMER_CUSTOM` (no DELETE).
 
-## Logs (no customer data)
+## Logs
 
-`flexcube.sync.started`, `flexcube.trigger.run` (`found`, `sent`, `retrying`, `failed`, `skipped`),
-`flexcube.trigger.failed` (`step`, error code), `flexcube.trigger.refused` (`reason`), `flexcube.trigger.staleRecovered`,
-`flexcube.sync.failed`. Never a CIF, KYC reference, name, payload, SQL or bind value.
+`flexcube.sync.started`, `flexcube.trigger.item` (`kycRefNo`, `seqNo`, `attempt`, `outcome`), `flexcube.trigger.run`
+(`found`, `sent`, `retrying`, `failed`, `skipped`), `flexcube.trigger.failed` (`kycRefNo`, `step`, error code),
+`flexcube.trigger.refused` (`kycRefNo`, `reason`), `flexcube.trigger.staleRecovered`, `flexcube.sync.failed`;
+`kyc.submission.onboarded` / `failed` / `duplicate` also carry `kycRefNo` and `seqNo`. Never a name, payload, SQL or
+bind value.
 
 ## SQL safety
 
