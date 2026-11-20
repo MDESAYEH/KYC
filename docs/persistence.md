@@ -1,4 +1,4 @@
-# Persistence model (Step 2)
+# Persistence model
 
 ## Why the production database is still TBD
 The bank has not decided the production integration database (Oracle is a possibility, not a decision). So:
@@ -52,7 +52,7 @@ The handler itself (`/customerStatus`) is Step 7. How REIS retries remains TBD; 
 - `SOURCE_OF_INCOME` stores per-value mappings only. The rule collapsing several ticked checkboxes into one REIS value is TBD and not implemented.
 
 ## Internal statuses added in Step 5
-`DELIVERY_UNCERTAIN` (onboarding outcome unknown; never retried) joins `RECEIVED`, `VALIDATION_FAILED`, `SUBMITTED_TO_REIS`, `REIS_CLEAN`, `REIS_PENDING`, `REIS_REJECTED`, `FINALIZED`, `FAILED_RETRYABLE`, `FAILED_PERMANENT`. Statuses are plain `varchar` values, so no migration was needed. New repository methods: `recordValidationFailure`, `reopenAfterValidationFailure` (only from `VALIDATION_FAILED`, conditional update), `recordDeliveryUncertain`. See `docs/workflow.md`.
+`DELIVERY_UNCERTAIN` (onboarding outcome unknown; sent again by the poller) joins `RECEIVED`, `VALIDATION_FAILED`, `SUBMITTED_TO_REIS`, `REIS_CLEAN`, `REIS_PENDING`, `REIS_REJECTED`, `FINALIZED`, `FAILED_RETRYABLE`, `FAILED_PERMANENT`. Statuses are plain `varchar` values, so no migration was needed. Repository methods: `recordValidationFailure`, `recordDeliveryUncertain`, `reopenForRetry` (conditional update, only from a retryable status: `RECEIVED`, `SUBMITTED_TO_REIS`, `VALIDATION_FAILED`, `FAILED_RETRYABLE`, `DELIVERY_UNCERTAIN`). See `docs/workflow.md`.
 
 ## Added in Step 6 (migrations 2 and 3)
 - `kyc_case.reis_instruction`, `kyc_case.reis_error_message` (nullable, 4000 chars): REIS onboarding response text. Sensitive: stored, never logged.
@@ -63,6 +63,6 @@ The handler itself (`/customerStatus`) is Step 7. How REIS retries remains TBD; 
 - Transaction note: SQLite correctness relies on atomic conditional UPDATEs. This is not the final production transaction design; review it when the production database is chosen.
 
 ## Added in Step 7 (migration 4)
-- `kyc_case.flexcube_update_attempt_count` (integer, default 0) and `flexcube_last_attempt_at`: every call of the FLEXCUBE updater (the automatic first attempt and operator recoveries) is counted and stamped. Technical bookkeeping only.
+- `kyc_case.flexcube_update_attempt_count` (integer, default 0) and `flexcube_last_attempt_at`: every call of the FLEXCUBE updater is counted and stamped. Technical bookkeeping only.
 - `DELIVERY_UNCERTAIN` cases that later receive a final callback are not changed: `applyFinalStatus` returns `RECONCILIATION_REQUIRED` and the audit row keeps the incoming status.
-- New repository methods: `IKycCaseRepository.claimFlexcubeRecovery` (atomic FAILED -> PENDING for operator recovery), `findCases(criteria)` (status / update status / age filters, mandatory limit capped at 500); `IWebhookEventRepository.listByKycCaseInternalId`, `listByResults`; `IDatabaseHealthCheck.ping` (ORM stays private to the persistence module).
+- `IWebhookEventRepository.listByKycCaseInternalId`, `listByResults`; `IDatabaseHealthCheck.ping` (ORM stays private to the persistence module).

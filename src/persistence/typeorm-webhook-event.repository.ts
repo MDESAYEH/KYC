@@ -74,37 +74,6 @@ export class TypeOrmWebhookEventRepository implements IWebhookEventRepository {
     return e ? toDomain(e) : null;
   }
 
-  async listBySystemId(systemId: string): Promise<WebhookEvent[]> {
-    const rows = await this.repo.find({ where: { systemId }, order: { receivedAt: 'ASC' } });
-    return rows.map(toDomain);
-  }
-
-  async listByKycCaseInternalId(kycCaseInternalId: string): Promise<WebhookEvent[]> {
-    const rows = await this.repo.find({
-      where: { kycCaseInternalId },
-      order: { receivedAt: 'ASC' },
-    });
-    return rows.map(toDomain);
-  }
-
-  async listByResults(
-    results: WebhookProcessingResult[],
-    since: Date,
-    limit: number,
-  ): Promise<WebhookEvent[]> {
-    if (results.length === 0) return [];
-    const rows = await this.repo
-      .createQueryBuilder('e')
-      .where('e.processingResult IN (:...results)', { results })
-      .andWhere('e.receivedAt >= :since', {
-        since: since.toISOString().replace('T', ' ').slice(0, 19),
-      })
-      .orderBy('e.receivedAt', 'DESC')
-      .limit(Math.min(Math.max(1, Math.floor(limit)), 500))
-      .getMany();
-    return rows.map(toDomain);
-  }
-
   private async mustFind(eventId: string): Promise<WebhookEvent> {
     const found = await this.findByEventId(eventId);
     if (!found) throw new Error(`Webhook event not found: ${eventId}`);

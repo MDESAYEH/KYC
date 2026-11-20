@@ -1,0 +1,19 @@
+# systemd unit for the KYC Integration API on the UAT1 server.
+# Install:  sudo cp deploy/kyc.service /etc/systemd/system/kyc.service && sudo systemctl daemon-reload
+# The application reads /opt/KYC/.env itself. Build first (npm ci && npm run build).
+[Unit]
+Description=KYC Integration API (FLEXCUBE <-> REIS)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/KYC
+ExecStart=/usr/bin/node dist/main.js
+# Bank CA for the REIS certificate (TLS verification stays on).
+Environment=NODE_EXTRA_CA_CERTS=/etc/kyc/aiib-ca.pem
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

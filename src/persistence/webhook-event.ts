@@ -63,13 +63,5 @@ export interface IWebhookEventRepository {
   /** Sets the final processing result and processedAt. */
   complete(eventId: string, completion: WebhookEventCompletion): Promise<WebhookEvent>;
   findByEventId(eventId: string): Promise<WebhookEvent | null>;
-  listBySystemId(systemId: string): Promise<WebhookEvent[]>;
-  listByKycCaseInternalId(kycCaseInternalId: string): Promise<WebhookEvent[]>;
-  /** Events with one of the given results received at/after `since`, newest first, capped. */
-  listByResults(
-    results: WebhookProcessingResult[],
-    since: Date,
-    limit: number,
-  ): Promise<WebhookEvent[]>;
 }
 export const WEBHOOK_EVENT_REPOSITORY = Symbol('IWebhookEventRepository');

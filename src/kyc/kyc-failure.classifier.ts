@@ -58,10 +58,13 @@ export function classifyPreReisFailure(error: unknown): FailureClassification | 
 }
 
 /**
- * REIS client failures. Uncertainty rule: when the onboarding request may have been received and
- * its outcome is unknown (timeout, reset, 5xx, unreadable 2xx), the case becomes DELIVERY_UNCERTAIN,
- * which is never retried automatically. Failures of the separate authenticate call can never have
- * delivered an onboarding request.
+ * REIS client failures. The poller sends FAILED_RETRYABLE and DELIVERY_UNCERTAIN again (attempt limit and
+ * delay from .env); FAILED_PERMANENT is final for the revision.
+ *  - authenticate failures never delivered an onboarding request and do not depend on the customer's data
+ *    (credentials, network, REIS down): retryable;
+ *  - onboarding timeout / reset / 5xx / unreadable answer: the outcome is unknown (DELIVERY_UNCERTAIN);
+ *  - onboarding 401 / 403: the token was refused, not the customer: retryable;
+ *  - onboarding 4xx: REIS refused the data: permanent.
  */
 export function classifyReisFailure(error: ReisClientError): FailureClassification {
   const failure = (
@@ -82,29 +85,24 @@ export function classifyReisFailure(error: ReisClientError): FailureClassificati
     const S = 'REIS_AUTHENTICATE' as const;
     switch (error.category) {
       case 'AUTHENTICATION':
-        return failure(S, 'REIS_AUTH_REJECTED', KycRequestStatus.FAILED_PERMANENT, false);
+        return failure(S, 'REIS_AUTH_REJECTED', KycRequestStatus.FAILED_RETRYABLE, false);
       case 'TIMEOUT':
         return failure(S, 'REIS_AUTH_TIMEOUT', KycRequestStatus.FAILED_RETRYABLE, false);
       case 'NETWORK':
         return failure(S, 'REIS_AUTH_NETWORK_ERROR', KycRequestStatus.FAILED_RETRYABLE, false);
       case 'HTTP_STATUS':
-        return failure(
-          S,
-          'REIS_AUTH_HTTP_ERROR',
-          httpStatus >= 500 ? KycRequestStatus.FAILED_RETRYABLE : KycRequestStatus.FAILED_PERMANENT,
-          false,
-        );
+        return failure(S, 'REIS_AUTH_HTTP_ERROR', KycRequestStatus.FAILED_RETRYABLE, false);
       case 'MALFORMED_RESPONSE':
-        return failure(S, 'REIS_AUTH_MALFORMED_RESPONSE', KycRequestStatus.FAILED_PERMANENT, false);
+        return failure(S, 'REIS_AUTH_MALFORMED_RESPONSE', KycRequestStatus.FAILED_RETRYABLE, false);
       default:
-        return failure(S, 'REIS_AUTH_FAILED', KycRequestStatus.FAILED_PERMANENT, false);
+        return failure(S, 'REIS_AUTH_FAILED', KycRequestStatus.FAILED_RETRYABLE, false);
     }
   }
 
   const S = 'REIS_ONBOARDING' as const;
   switch (error.category) {
-    case 'AUTHENTICATION': // REIS answered 401/403: it rejected the call
-      return failure(S, 'REIS_ONBOARDING_AUTH_REJECTED', KycRequestStatus.FAILED_PERMANENT, true);
+    case 'AUTHENTICATION': // REIS answered 401/403: it refused the token, not the customer
+      return failure(S, 'REIS_ONBOARDING_AUTH_REJECTED', KycRequestStatus.FAILED_RETRYABLE, true);
     case 'TIMEOUT':
       return failure(S, 'REIS_ONBOARDING_TIMEOUT', KycRequestStatus.DELIVERY_UNCERTAIN, true);
     case 'NETWORK': {

@@ -1,5 +1,3 @@
-import { CustomerType } from '../canonical';
-
 /** REIS KYC V1.2 form definitions (confirmed). */
 export const REIS_FORM = {
   INDIVIDUAL: { formId: 1, entityType: 'PP' },
@@ -7,10 +5,6 @@ export const REIS_FORM = {
   INDIVIDUAL_RELATION: { formId: 3, entityType: 'PP' },
   CORPORATE_RELATION: { formId: 4, entityType: 'PM' },
 } as const;
-
-export function reisFormFor(type: CustomerType) {
-  return type === CustomerType.INDIVIDUAL ? REIS_FORM.INDIVIDUAL : REIS_FORM.CORPORATE;
-}
 
 /** REIS header names (confirmed). Token goes in x-auth-token, NOT Authorization. */
 export const REIS_HEADERS = {

@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { Logger } from '@nestjs/common';
+import { KycRequestStatus } from '../common/kyc-status';
 import { oraCode, oracleErrorCode } from '../flexcube/oracle-error';
-import { CustomerTriggerSource, ReadyCustomer } from '../flexcube/source/customer-trigger.source';
+import { CustomerTriggerSource, TriggerWork } from '../flexcube/source/customer-trigger.source';
 import { FlexcubeKycSource } from '../flexcube/source/flexcube-kyc-source';
 import { InvalidSqlBindsError } from '../flexcube/staging/sql-binds';
 import {
@@ -16,29 +17,42 @@ import { requireCif } from '../reis/cif-identity';
 export interface TriggerSyncSummary {
   found: number;
   sent: number;
+  retrying: number;
   failed: number;
   skipped: number;
 }
 
 export interface TriggerSyncOptions {
-  /** Only these CIFs are taken (controlled rollout). Empty = every U row (needs syncAllCifs). */
+  batchSize: number;
+  /** Attempts per CIF revision before it is set to E (FLEXCUBE_SYNC_MAX_ATTEMPTS). */
+  maxAttempts: number;
+  /** Wait between two attempts (FLEXCUBE_SYNC_RETRY_DELAY_MS). */
+  retryDelayMs: number;
+  /** Only these CIFs are sent; empty = all (FLEXCUBE_SYNC_CIF_ALLOWLIST). */
   cifAllowlist: ReadonlySet<string>;
-  /** Rows an operator reconciled (FLEXCUBE_SYNC_UNCERTAIN_ACK): they no longer stop sending. */
-  acknowledgedUncertain?: StagingKey[];
   now?: () => number;
 }
 
-/** A row claimed for longer than this (well above the REIS timeout) means a pass died after the claim. */
-export const TRIGGER_DELIVERY_RISK_MINUTES = 5;
-/** This many technical failures in a row stop the pass (the next pass tries again). */
-export const TRIGGER_MAX_TECHNICAL_FAILURES = 3;
+/** A claimed row older than this (well above the REIS timeout) belongs to a worker that died. */
+export const STALE_CLAIM_MINUTES = 5;
+/** This many technical (database) failures in a row end the pass; the next pass tries again. */
+export const MAX_TECHNICAL_FAILURES = 3;
 
-const UNCERTAIN_DUPLICATES: ReadonlySet<DuplicateReason> = new Set<DuplicateReason>([
-  'DELIVERY_UNCERTAIN',
-  'IN_PROGRESS_OR_UNCERTAIN',
+/** REIS already has this revision: the row is done, nothing is sent again. */
+const ALREADY_AT_REIS: ReadonlySet<DuplicateReason> = new Set<DuplicateReason>([
+  'ALREADY_CLEAN',
+  'AWAITING_FINAL_STATUS',
+  'ALREADY_REJECTED',
+  'ALREADY_FINALIZED',
 ]);
 
-type Outcome = 'sent' | 'failed' | 'skipped';
+const RETRYABLE: ReadonlySet<KycRequestStatus> = new Set([
+  KycRequestStatus.FAILED_RETRYABLE,
+  KycRequestStatus.DELIVERY_UNCERTAIN,
+]);
+
+type Outcome = 'sent' | 'retrying' | 'failed' | 'skipped';
+type Step = 'insert' | 'claim' | 'load' | 'pick' | 'submit' | 'complete';
 
 /** The KYC details carry a CUSTOMER_NO different from the trigger row's CIF. */
 export class CifSourcesDisagreeError extends Error {
@@ -47,168 +61,162 @@ export class CifSourcesDisagreeError extends Error {
     this.name = 'CifSourcesDisagreeError';
   }
 }
-type Step = 'insert' | 'claim' | 'load' | 'pick' | 'submit' | 'complete';
 
 const isTechnical = (error: unknown) =>
   oracleErrorCode(error) !== undefined || error instanceof InvalidSqlBindsError;
 
+/** A code safe to store and log: an Oracle code or an error class name, never a message. */
+const errorCode = (error: unknown) =>
+  isTechnical(error) ? oraCode(error) : error instanceof Error ? error.name : 'Error';
+
 /**
- * Automatic sending from the Finexta trigger table (agreed 19/11/2026):
+ * Sends every new or modified CIF from the Finexta trigger table to REIS and writes the result back:
  *
- *   STTM_CUSTOMER_CUSTOM.READY_TO_SCAN = U (FCUBS, after a CIF is created / modified and authorized)
- *     -> staging row (KYC_REF_NO, SEQ_NO = STTM_CUSTOMER.MOD_NO) N -> claimed W -> KYC details read
- *     -> trigger U -> P (picked) -> REIS (systemId = CIF) -> S, with REIS_FINAL_STATUS written at once for
- *        CLEAN / REJECT (BLOCKED); PENDING is finished by the REIS callback on the same revision
- *     -> on any failure the staging row is E (or released to N when nothing was sent) and the trigger E.
+ *   trigger U -> staging N -> claimed W -> KYC read -> trigger P -> REIS (systemId = CIF) -> staging S
+ *   (REIS_FINAL_STATUS written at once for CLEAN / REJECT; PENDING is finished by the REIS callback).
  *
- * Safety (same rules as the single-KYC trial):
- *  - nothing is sent while any delivery is uncertain (send guard), and an uncertain result stops the pass;
- *  - nothing is resent automatically: an E row or E trigger needs a person;
- *  - a KYC whose staging table already has a HIGHER SEQ_NO is not sent (FLEXCUBE's account check reads the
- *    highest SEQ_NO, our result would be invisible) and its trigger is set to E;
- *  - a CIF revision that is already staged and not untouched N is not sent again (trigger E);
- *  - the trigger goes U -> P only after the staging row is claimed and the KYC was read, and only while the CIF
- *    is still at the same MOD_NO; a technical failure before that leaves U, so the next pass retries;
- *  - the first runs are limited to an allow-list of CIFs.
- * Logs carry counts, steps and Oracle codes only, never a CIF, a name or a payload.
+ * Failures:
+ *  - REIS not reached, refused the token, or outcome unknown (timeout, 5xx, crash): staging back to N with
+ *    RETRY_COUNT + 1, trigger stays P; the retry pass sends it again after the delay, up to maxAttempts,
+ *    then staging E and trigger E;
+ *  - REIS refused the data (4xx) or the KYC cannot be built (missing / invalid data): E at once; a corrected
+ *    CIF comes back from FCUBS as a new revision (U);
+ *  - database problem before REIS: the claim is given back, nothing counted.
+ * A KYC whose staging table already holds a HIGHER SEQ_NO is never sent (trigger E).
+ * Logs carry counts, steps and codes only, never a CIF, a name or a payload.
  */
 export class TriggerSyncService {
   private readonly logger = new Logger(TriggerSyncService.name);
-  private readonly acknowledged: ReadonlySet<string>;
   private readonly now: () => number;
-  private haltedInProcess = false;
-  private lastRunAt: number | null = null;
-  private lastSuccessfulRunAt: number | null = null;
-  private sendingHalted = false;
 
   constructor(
     private readonly triggers: CustomerTriggerSource,
     private readonly details: FlexcubeKycSource,
     private readonly staging: StagingSubmissionRepository,
     private readonly workflow: IKycWorkflow,
-    private readonly batchSize: number,
     private readonly options: TriggerSyncOptions,
   ) {
     this.now = options.now ?? Date.now;
-    this.acknowledged = new Set(
-      (options.acknowledgedUncertain ?? []).map((k) => `${k.kycRefNo}/${k.seqNo}`),
-    );
-  }
-
-  getStatus() {
-    const iso = (t: number | null) => (t === null ? null : new Date(t).toISOString());
-    return {
-      lastRunAt: iso(this.lastRunAt),
-      lastSuccessfulRunAt: iso(this.lastSuccessfulRunAt),
-      sendingHalted: this.sendingHalted,
-    };
   }
 
   async runOnce(): Promise<TriggerSyncSummary> {
     const runId = randomUUID();
-    const summary: TriggerSyncSummary = { found: 0, sent: 0, failed: 0, skipped: 0 };
-    this.lastRunAt = this.now();
-    if (await this.deliveryUnresolved(runId)) return summary;
+    const summary: TriggerSyncSummary = { found: 0, sent: 0, retrying: 0, failed: 0, skipped: 0 };
+    const { batchSize, cifAllowlist, retryDelayMs } = this.options;
+
+    const recovered = await this.staging.recoverStale(STALE_CLAIM_MINUTES);
+    if (recovered > 0) {
+      this.logger.warn({ event: 'flexcube.trigger.staleRecovered', runId, recovered });
+    }
 
     const corporate = await this.details.refreshCorporateSupport(this.now());
-    const ready = (await this.triggers.findReady(this.batchSize, corporate)).filter(
-      (c) => this.options.cifAllowlist.size === 0 || this.options.cifAllowlist.has(c.customerNo),
-    );
-    summary.found = ready.length;
+    const work = [
+      ...(await this.triggers.findReady(batchSize, corporate)),
+      ...(await this.triggers.findRetryDue(batchSize, corporate, Math.ceil(retryDelayMs / 1000))),
+    ].filter((w) => cifAllowlist.size === 0 || cifAllowlist.has(w.customerNo));
+    summary.found = work.length;
 
     let technical = 0;
-    for (const customer of ready) {
-      if (this.haltedInProcess || technical >= TRIGGER_MAX_TECHNICAL_FAILURES) break;
-      const result = await this.processOne(customer, runId);
+    for (const item of work) {
+      if (technical >= MAX_TECHNICAL_FAILURES) break;
+      const result = await this.processOne(item, runId);
       summary[result.outcome]++;
       technical = result.technical ? technical + 1 : 0;
     }
-    if (technical === 0) this.lastSuccessfulRunAt = this.now();
     if (summary.found > 0) this.logger.log({ event: 'flexcube.trigger.run', runId, ...summary });
     return summary;
   }
 
-  /** Never throws: a failure is logged, the staging row and the trigger are left in a safe state. */
+  /** Never throws: every failure leaves the staging row and the trigger in a defined state. */
   private async processOne(
-    customer: ReadyCustomer,
+    work: TriggerWork,
     runId: string,
   ): Promise<{ outcome: Outcome; technical: boolean }> {
-    const key: StagingKey = { kycRefNo: customer.kycRefNo, seqNo: customer.seqNo };
-    if (!Number.isInteger(customer.seqNo) || customer.seqNo < 1) {
-      return this.refuse(customer, runId, 'INVALID_CIF_MOD_NO');
+    const key: StagingKey = { kycRefNo: work.kycRefNo, seqNo: work.seqNo };
+    if (!Number.isInteger(work.seqNo) || work.seqNo < 1) {
+      return this.refuse(work, runId, 'INVALID_CIF_MOD_NO');
     }
-    if (customer.higherRows > 0) return this.refuse(customer, runId, 'HIGHER_SEQ_NO_EXISTS');
+    if (work.higherRows > 0) return this.refuse(work, runId, 'HIGHER_SEQ_NO_EXISTS');
+    if (work.retryCount >= this.options.maxAttempts) {
+      await this.staging.fail(key, { error: 'MAX_ATTEMPTS_REACHED' }).catch(() => false);
+      return this.refuse(work, runId, 'MAX_ATTEMPTS_REACHED');
+    }
 
     let step: Step = 'insert';
     let claimed = false;
-    let picked = false;
+    let picked = work.picked;
     try {
-      if (customer.stagingRows === 0 && !(await this.staging.insertNew(key, randomUUID()))) {
+      if (work.stagingRows === 0 && !(await this.staging.insertNew(key, randomUUID()))) {
         return { outcome: 'skipped', technical: false }; // another instance took it
       }
       step = 'claim';
       if (!(await this.staging.claim(key))) {
-        // The revision is already staged and not an untouched N row (sent, failed or in progress).
-        return this.refuse(customer, runId, 'REVISION_ALREADY_STAGED');
+        // Already sent, failed or being processed: for a U trigger that is an error, for a retry someone
+        // else has it.
+        return work.picked
+          ? { outcome: 'skipped', technical: false }
+          : this.refuse(work, runId, 'REVISION_ALREADY_STAGED');
       }
       claimed = true;
+
       step = 'load';
-      const raw = await this.details.load({ ...key, customerType: customer.customerType });
-      if (raw.CUSTOMER_NO != null && requireCif(raw.CUSTOMER_NO) !== customer.customerNo) {
+      const raw = await this.details.load(work);
+      if (raw.CUSTOMER_NO != null && requireCif(raw.CUSTOMER_NO) !== work.customerNo) {
         throw new CifSourcesDisagreeError();
       }
-      const request = { ...raw, CUSTOMER_NO: customer.customerNo };
-      step = 'pick';
-      if (!(await this.triggers.markPicked(customer))) {
-        await this.staging.release(key); // FCUBS moved the trigger or the CIF changed: next pass decides
-        return { outcome: 'skipped', technical: false };
+      const request = { ...raw, CUSTOMER_NO: work.customerNo };
+
+      if (!picked) {
+        step = 'pick';
+        if (!(await this.triggers.markPicked(work))) {
+          await this.staging.release(key); // FCUBS moved the trigger or the CIF changed: next pass decides
+          return { outcome: 'skipped', technical: false };
+        }
+        picked = true;
       }
-      picked = true;
+
       step = 'submit';
-      const result = await this.workflow.submit(request, { seqNo: customer.seqNo });
+      const result = await this.workflow.submit(request, { seqNo: work.seqNo });
       step = 'complete';
-      const outcome = await this.complete(key, result, runId);
-      if (outcome !== 'sent') await this.markError(customer);
-      return { outcome, technical: false };
+      return { outcome: await this.record(work, key, result), technical: false };
     } catch (error) {
-      // Only an error class name or an Oracle code is stored, never a message (it could hold customer data).
-      const code = isTechnical(error)
-        ? oraCode(error)
-        : error instanceof Error
-          ? error.name
-          : 'Error';
+      const code = errorCode(error);
       this.logger.error({ event: 'flexcube.trigger.failed', runId, step, error: code });
       if (step === 'submit') {
-        // REIS may have been called: E, never resent, sending stops until reconciled.
-        this.halt(runId);
-        await this.staging
-          .fail(key, { error: oraCode(error), delivery: 'UNCERTAIN' })
-          .catch(() => false);
-        await this.markError(customer);
-        return { outcome: 'failed', technical: false };
+        // REIS may or may not have been reached: another attempt later.
+        const outcome = await this.retryOrGiveUp(work, key, {
+          response: { error: code, delivery: 'UNCERTAIN' },
+        }).catch((): Outcome => 'failed');
+        return { outcome, technical: false };
       }
       if (step === 'complete') {
-        // REIS answered but the result could not be stored: leave W (send guard stops sending).
-        this.halt(runId);
+        // REIS answered but the result could not be stored: the row stays W and is recovered as stale.
         return { outcome: 'failed', technical: true };
       }
       if (isTechnical(error)) {
-        // Database / driver problem before REIS: give the claim back, trigger stays U (or P -> E if picked).
-        if (claimed && !picked) await this.staging.release(key).catch(() => false);
-        if (picked) await this.markError(customer);
+        if (claimed) {
+          // Database problem before REIS: give the claim back. A picked trigger needs a counted attempt so
+          // that the retry pass finds the row again.
+          await (
+            picked
+              ? this.staging.scheduleRetry(key, { response: { error: code } })
+              : this.staging.release(key)
+          ).catch(() => false);
+        }
         return { outcome: 'failed', technical: true };
       }
-      // The KYC data itself cannot be processed (missing details, CIF mismatch): E, a person corrects it.
+      // The KYC itself cannot be sent (missing details, CIF mismatch): E, a corrected CIF comes back as U.
       if (claimed) await this.staging.fail(key, { error: code.slice(0, 60) }).catch(() => false);
-      await this.markError(customer);
+      await this.markError(work);
       return { outcome: 'failed', technical: false };
     }
   }
 
-  private async complete(
+  /** Stores the workflow result on the staging row and decides retry / done. */
+  private async record(
+    work: TriggerWork,
     key: StagingKey,
     result: KycSubmissionResult,
-    runId: string,
   ): Promise<Outcome> {
     switch (result.outcome) {
       case 'ONBOARDED':
@@ -219,82 +227,61 @@ export class TriggerSyncService {
         });
         return 'sent';
       case 'FAILED': {
-        const uncertain = result.requestMayHaveReachedReis;
-        if (uncertain) this.halt(runId);
+        const response = { error: result.code, stage: result.stage };
+        if (RETRYABLE.has(result.persistedStatus)) {
+          return this.retryOrGiveUp(work, key, { request: result.reisRequest, response });
+        }
         await this.staging.complete(key, {
           status: StagingProcessStatus.ERROR,
           request: result.reisRequest,
-          response: {
-            error: result.code,
-            stage: result.stage,
-            ...(uncertain ? { delivery: 'UNCERTAIN' } : {}),
-          },
+          response,
         });
+        await this.markError(work);
         return 'failed';
       }
       case 'DUPLICATE': {
-        const uncertain = UNCERTAIN_DUPLICATES.has(result.reason);
-        if (uncertain) this.halt(runId);
+        const done = ALREADY_AT_REIS.has(result.reason);
         await this.staging.complete(key, {
-          status: StagingProcessStatus.ERROR,
-          response: {
-            error: 'DUPLICATE',
-            reason: result.reason,
-            ...(uncertain ? { delivery: 'UNCERTAIN' } : {}),
-          },
+          status: done ? StagingProcessStatus.SUCCESS : StagingProcessStatus.ERROR,
+          response: { duplicate: result.reason },
         });
+        if (done) return 'sent';
+        await this.markError(work);
         return 'failed';
       }
     }
   }
 
+  /** Another attempt after the delay, or E when this was the last one. */
+  private async retryOrGiveUp(
+    work: TriggerWork,
+    key: StagingKey,
+    attempt: { request?: object; response: object },
+  ): Promise<Outcome> {
+    if (work.retryCount + 1 < this.options.maxAttempts) {
+      await this.staging.scheduleRetry(key, attempt);
+      return 'retrying';
+    }
+    await this.staging.complete(key, {
+      status: StagingProcessStatus.ERROR,
+      request: attempt.request,
+      response: { ...attempt.response, attempts: work.retryCount + 1 },
+    });
+    await this.markError(work);
+    return 'failed';
+  }
+
   private async refuse(
-    customer: ReadyCustomer,
+    work: TriggerWork,
     runId: string,
     reason: string,
   ): Promise<{ outcome: Outcome; technical: boolean }> {
     this.logger.warn({ event: 'flexcube.trigger.refused', runId, reason });
-    await this.markError(customer);
-    return { outcome: 'skipped', technical: false };
+    await this.markError(work);
+    return { outcome: 'failed', technical: false };
   }
 
-  private async markError(customer: ReadyCustomer): Promise<void> {
-    await this.triggers.markError(customer).catch(() => false);
-  }
-
-  private halt(runId: string): void {
-    if (!this.haltedInProcess)
-      this.logger.error({ event: 'flexcube.trigger.haltingAfterUncertainDelivery', runId });
-    this.haltedInProcess = true;
-    this.sendingHalted = true;
-  }
-
-  /** Nothing is sent while a delivery is unresolved, or when that cannot be checked. */
-  private async deliveryUnresolved(runId: string): Promise<boolean> {
-    if (this.haltedInProcess) return true;
-    let risky: StagingKey[];
-    try {
-      risky = await this.staging.findDeliveryRisk(TRIGGER_DELIVERY_RISK_MINUTES, 50);
-    } catch (error) {
-      this.sendingHalted = true;
-      this.logger.error({
-        event: 'flexcube.trigger.sendingHalted',
-        runId,
-        reason: 'CHECK_FAILED',
-        error: oraCode(error),
-      });
-      return true;
-    }
-    const open = risky.filter((k) => !this.acknowledged.has(`${k.kycRefNo}/${k.seqNo}`));
-    this.sendingHalted = open.length > 0;
-    if (open.length > 0) {
-      this.logger.error({
-        event: 'flexcube.trigger.sendingHalted',
-        runId,
-        reason: 'DELIVERY_UNCERTAIN',
-        unresolvedRows: open.length,
-      });
-    }
-    return open.length > 0;
+  private async markError(work: TriggerWork): Promise<void> {
+    await this.triggers.markError(work).catch(() => false);
   }
 }

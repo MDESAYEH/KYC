@@ -1,13 +1,11 @@
 # Working on this repository
 
-Read `docs/STATUS.md` first: it is the current state (19/11/2026). Older handoff notes were removed.
+Read `docs/STATUS.md` first.
 
 ## Boundaries (UAT1 bank server and data)
 
-- Polling (`FLEXCUBE_POLL_ENABLED=true`) sends real KYCs from the trigger table: enable or widen
-  `FLEXCUBE_SYNC_CIF_ALLOWLIST` / `FLEXCUBE_SYNC_ALL_CIFS` only when the user asks for it.
-- Outside the poller, send a KYC only with `npm run trial:one` (fresh preflight and approval file); never resend after
-  an uncertain delivery. Reset only with `npm run trial:reset` and a written REIS confirmation.
+- Polling (`FLEXCUBE_POLL_ENABLED=true`) sends every CIF FCUBS sets to `U` (or only `FLEXCUBE_SYNC_CIF_ALLOWLIST`):
+  change these only when the user asks.
 - Never write `REIS_FINAL_STATUS` by hand, never `DELETE` staging rows, never change FLEXCUBE tables other than the
   staging table and `STTM_CUSTOMER_CUSTOM.READY_TO_SCAN` through the code.
 - The UAT1 host also runs the bank's CEO dashboard: touch only `/opt/KYC` and `kyc.service`.
@@ -15,7 +13,7 @@ Read `docs/STATUS.md` first: it is the current state (19/11/2026). Older handoff
 
 ## Code
 
-- Tests must pass before delivery (`npm test`, `npm run lint`, `npx tsc --noEmit`). Real-Oracle tests are opt-in
-  (`docs/isolated-oracle-tests.md`).
+- Before delivery: `npx tsc --noEmit`, `npm run lint`, `npm run build`.
 - Every SQL statement must be in `src/tools/sql-catalog.ts` so `npm run check:oracle-sql` parses it on UAT1.
 - Oracle bind names must not be reserved words (ORA-01745); CLOB values are bound directly, never inside a SQL function.
+- Logs carry codes and counts only, never customer data.

@@ -75,17 +75,6 @@ export class TypeOrmReferenceMappingRepository implements IReferenceMappingRepos
     return this.mustFind(input.mappingType, input.flexcubeValue);
   }
 
-  async setActive(
-    type: ReferenceMappingType,
-    flexcubeValue: string,
-    active: boolean,
-  ): Promise<ReferenceMappingEntry> {
-    const existing = await this.repo.findOne({ where: { mappingType: type, flexcubeValue } });
-    if (!existing) throw new UnmappedReferenceValueError(type, flexcubeValue);
-    await this.repo.update(existing.id, { active });
-    return this.mustFind(type, flexcubeValue);
-  }
-
   async list(type?: ReferenceMappingType): Promise<ReferenceMappingEntry[]> {
     const rows = await this.repo.find({
       where: type ? { mappingType: type } : {},

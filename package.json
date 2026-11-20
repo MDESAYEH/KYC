@@ -9,20 +9,14 @@
   },
   "scripts": {
     "build": "nest build",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
-    "lint": "eslint \"{src,test}/**/*.ts\"",
-    "format": "prettier --write \"{src,test}/**/*.ts\"",
+    "start:dev": "nest start --watch",
+    "lint": "eslint \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\"",
     "migration:run": "nest build && node dist/persistence/run-migrations.js",
     "migration:revert": "nest build && node dist/persistence/run-migrations.js revert",
-    "test": "jest",
-    "test:cov": "jest --coverage",
     "mappings:seed": "nest build && node dist/mapping/seed/run-seed.js",
-    "check:uat1": "nest build && node dist/tools/check-flexcube-uat.js",
     "backup:sqlite": "nest build && node dist/tools/backup-sqlite.js",
-    "trial:one": "nest build && node dist/tools/run-single-kyc-trial.js",
-    "trial:reset": "nest build && node dist/tools/reset-single-kyc-trial.js",
     "check:oracle-sql": "nest build && node dist/tools/check-oracle-sql.js"
   },
   "dependencies": {
@@ -44,16 +38,12 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@nestjs/cli": "^11.0.24",
-    "@nestjs/testing": "^11.2.7",
     "@types/better-sqlite3": "^9.6.0",
-    "@types/jest": "^30.0.0",
     "@types/node": "^26.6.3",
     "@types/oracledb": "^6.10.4",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
-    "jest": "^30.5.2",
     "prettier": "^3.9.9",
-    "ts-jest": "^29.4.14",
     "typescript": "~5.9",
     "typescript-eslint": "^8.71.0"
   }

@@ -1,6 +1,6 @@
 import { ReisFinalStatus } from '../../reis/reis-status';
 
-/** What the status updater receives. The FLEXCUBE-side mechanism (table/API) is TBD. */
+/** What the status updater receives. */
 export interface FlexcubeStatusUpdate {
   kycRefNo: string;
   customerNo: string | null;

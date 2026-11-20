@@ -1,4 +1,4 @@
-# `POST /customerStatus` - REIS final-status webhook (Step 6)
+# `POST /customerStatus` - REIS final-status webhook
 
 ```
 PENDING  (REIS answered PENDING to searchOnboardCustomer; case = REIS_PENDING)
@@ -31,7 +31,7 @@ REIS ---- POST /customerStatus ---->  Bank Integration API
 **PROVISIONAL (implemented, to be confirmed)**
 - The final callback schema is not approved: `customerId` is optional/nullable (integer), `systemName` optional, `ServiceType` validated against `CUSTOMER_STATUS` only when present, `systemId` strictly a string, unknown fields ignored (never stored).
 - Every non-200 HTTP status below (400/401/404/409). We do not know REIS' retry behaviour or its retry-trigger status codes, and nothing here claims that any code will or will not cause REIS to retry.
-- 200 for `UPDATE_FAILED` is **PROVISIONAL BANK-SIDE BEHAVIOUR, not a REIS contract.** Reason: the REIS decision has already been durably accepted and stored, and REIS' callback retry / error-code behaviour is still TBD, so we must not depend on undocumented REIS retries. The failed FLEXCUBE update stays visible (`flexcube_update_status = FAILED`, see `docs/operations.md`) for operator recovery.
+- 200 for `UPDATE_FAILED` is **PROVISIONAL BANK-SIDE BEHAVIOUR, not a REIS contract.** Reason: the REIS decision has already been durably accepted and stored, and REIS' callback retry / error-code behaviour is still TBD, so we must not depend on undocumented REIS retries. The failed FLEXCUBE update stays visible (`flexcube_update_status = FAILED` on the case) for a manual correction.
 
 **TBD**
 - Inbound authentication (see below): mTLS, API key, OAuth, IP allowlist or an API gateway are all possibilities; none is confirmed.
@@ -43,7 +43,7 @@ REIS ---- POST /customerStatus ---->  Bank Integration API
 | Result (audit + body) | When | HTTP (provisional except 200) | State change | FLEXCUBE updater |
 |---|---|---|---|---|
 | `APPLIED` | first valid callback for a case in `REIS_PENDING` | 200 | final status stored once, case `FINALIZED`, REIS `customerId` stored if the case had none, `flexcube_update_status` PENDING -> APPLIED | called exactly once |
-| `UPDATE_FAILED` | as APPLIED, but the FLEXCUBE update threw | 200 (PROVISIONAL bank-side) | same, but `flexcube_update_status` = FAILED (+ code, safe message). The REIS decision is **not** lost | called once, not retried automatically; operator recovery available |
+| `UPDATE_FAILED` | as APPLIED, but the FLEXCUBE update threw | 200 (PROVISIONAL bank-side) | same, but `flexcube_update_status` = FAILED (+ code, safe message). The REIS decision is **not** lost | called once, not retried automatically |
 | `DUPLICATE` | same final status again | 200 | only `final_status_received_count` grows | not called |
 | `CONFLICT` | CUSTOMER after BLOCKED or BLOCKED after CUSTOMER | 409 | none; original kept; `conflicting_final_status` records the attempt | not called |
 | `CUSTOMER_ID_MISMATCH` | callback `customerId` differs from the stored REIS customer id | 409 | none | not called |
@@ -56,7 +56,7 @@ REIS ---- POST /customerStatus ---->  Bank Integration API
 Notes: syntactically broken JSON, oversized or undecodable bodies are rejected by the HTTP layer with the same 4xx **and are now audited** (see below). Correlation uses only `systemId`; names or other personal data are never used to find a case. REIS `customerId` and FLEXCUBE `CUSTOMER_NO` are different identifiers and are stored in different columns.
 
 ## Idempotency
-`applyFinalStatus` (persistence) decides the outcome with atomic conditional updates (`... WHERE final_status IS NULL AND internal_request_status = 'REIS_PENDING'`). Only the call that wins that update returns `APPLIED` and triggers the FLEXCUBE update, so concurrent identical callbacks produce exactly one business application (tested with 6 parallel callbacks). A changed final status is never silently overwritten.
+`applyFinalStatus` (persistence) decides the outcome with atomic conditional updates (`... WHERE final_status IS NULL AND internal_request_status = 'REIS_PENDING'`). Only the call that wins that update returns `APPLIED` and triggers the FLEXCUBE update, so concurrent identical callbacks produce exactly one business application. A changed final status is never silently overwritten.
 
 ## FLEXCUBE update state is separate from the REIS decision
 `kyc_case.final_status` (REIS decision) and `kyc_case.flexcube_update_status` (`NOT_ATTEMPTED` -> `PENDING` -> `APPLIED` | `FAILED`, plus `flexcube_update_error_code`, `flexcube_update_error_message`, `flexcube_updated_at`) are independent. A valid callback is stored first; a FLEXCUBE failure only changes the update state. **There is no automatic retry** of FLEXCUBE updates (no approved retry rule); a duplicate callback does not repeat a failed or successful update. A case left in `PENDING` means the update was interrupted.
@@ -92,11 +92,11 @@ onboarding request times out (or the outcome is otherwise unknown)
   -> REIS may later send CUSTOMER / BLOCKED
   -> RECONCILIATION_REQUIRED
 ```
-Today the callback is **audited and nothing else happens**: `finalStatus` is not set, FLEXCUBE is not called, onboarding is not retried, and there is no automatic reconciliation or operator approval mechanism. The audit row preserves the incoming CUSTOMER/BLOCKED value as evidence (and `findDeliveryUncertainCases` shows how many such callbacks arrived). **Decision needed from the Bank / REIS:** may a valid final callback reconcile a `DELIVERY_UNCERTAIN` case automatically (and if so, under which checks, e.g. matching systemId and customerId), or must an operator approve it? Until then the final reconciliation rule is TBD.
+Today the callback is **audited and nothing else happens**: `finalStatus` is not set, FLEXCUBE is not called, onboarding is not retried, and there is no automatic reconciliation or operator approval mechanism. The audit row preserves the incoming CUSTOMER/BLOCKED value as evidence. **Decision needed from the Bank / REIS:** may a valid final callback reconcile a `DELIVERY_UNCERTAIN` case automatically (and if so, under which checks, e.g. matching systemId and customerId), or must an operator approve it? Until then the final reconciliation rule is TBD.
 
 ## REIS reply (2026-10-10): retries and authentication
 - **REIS retries any non-200 response**, with a final retry at about midnight (00:00); if retries are exhausted without FLEXCUBE being updated, a manual FLEXCUBE update is expected. REIS timeout, retry interval and maximum attempts were not given.
 - Consequences for this endpoint: a **200 ends REIS retries** (APPLIED, DUPLICATE and the provisional bank-side `UPDATE_FAILED`), while 400 / 401 / 404 / 409 results will be retried by REIS (they stay audited each time; `RECONCILIATION_REQUIRED`, `CONFLICT`, `INCONSISTENT_STATE`, `UNKNOWN_CASE` would simply repeat). The earlier statement that no claim is made about REIS retries is superseded for the *any non-200* rule; which of our codes SHOULD be non-200 is still a design choice to review.
-- The incoming status is kept in the audit row, so a manual FLEXCUBE update after exhausted retries can use `findRecentUnknownCaseCallbacks` / `findRecentCallbackConflicts` (see `docs/operations.md`).
+- The incoming status is kept in the audit row (`webhook_event`), the evidence for any manual FLEXCUBE correction.
 - REIS says the bank logic should rely on `systemId` and `status` (CUSTOMER / BLOCKED); other fields are not stated as final.
 - **Callback authentication modes REIS supports:** NONE, BASIC (plain-text credentials in the request), BEARER (access token / API key), NTLM. The Bank chooses; nothing is implemented (deny-all until configured). Using BASIC requires TLS; NONE would leave the endpoint open.

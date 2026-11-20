@@ -1,24 +1,19 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import { CanonicalKycCustomer, CustomerType } from '../canonical';
 import { ReisOnboardingRequest } from '../reis/dto';
 import { FlexcubeUpdateStatus, KycRequestStatus } from '../common/kyc-status';
 import { FlexcubeCustomerRequest } from '../flexcube/dto/flexcube-customer.request';
 import {
-  FLEXCUBE_STATUS_UPDATER,
-  FLEXCUBE_TO_CANONICAL_MAPPER,
   IFlexcubeStatusUpdater,
   IFlexcubeToCanonicalMapper,
 } from '../flexcube/flexcube.interfaces';
 import { KycCase } from '../persistence/kyc-case';
 import { DuplicateKycCaseError } from '../persistence/persistence.errors';
-import { IKycCaseRepository, KYC_CASE_REPOSITORY } from '../persistence/persistence.interfaces';
+import { InvalidFieldValueError } from '../canonical/transformation.errors';
+import { IKycCaseRepository, RETRYABLE_STATUSES } from '../persistence/persistence.interfaces';
+import { CifIdentityError, requireCif } from '../reis/cif-identity';
 import { ReisClientError } from '../reis/reis.errors';
-import {
-  CANONICAL_TO_REIS_TRANSFORMER,
-  ICanonicalToReisTransformer,
-  IReisOnboardingClient,
-  REIS_ONBOARDING_CLIENT,
-} from '../reis/reis.interfaces';
+import { ICanonicalToReisTransformer, IReisOnboardingClient } from '../reis/reis.interfaces';
 import {
   classifyPreReisFailure,
   classifyReisFailure,
@@ -32,55 +27,44 @@ import {
 } from './kyc-submission.result';
 import { IKycWorkflow, SubmitOptions } from './kyc.interfaces';
 
-const DUPLICATE_REASON: Record<KycRequestStatus, DuplicateReason | undefined> = {
-  [KycRequestStatus.RECEIVED]: 'IN_PROGRESS_OR_UNCERTAIN',
-  [KycRequestStatus.SUBMITTED_TO_REIS]: 'IN_PROGRESS_OR_UNCERTAIN',
+/** Why an existing case of the same revision is not sent again (retryable statuses are reopened instead). */
+const DUPLICATE_REASON: Partial<Record<KycRequestStatus, DuplicateReason>> = {
   [KycRequestStatus.REIS_CLEAN]: 'ALREADY_CLEAN',
   [KycRequestStatus.REIS_PENDING]: 'AWAITING_FINAL_STATUS',
   [KycRequestStatus.REIS_REJECTED]: 'ALREADY_REJECTED',
   [KycRequestStatus.FINALIZED]: 'ALREADY_FINALIZED',
-  [KycRequestStatus.DELIVERY_UNCERTAIN]: 'DELIVERY_UNCERTAIN',
-  [KycRequestStatus.FAILED_RETRYABLE]: 'PREVIOUS_ATTEMPT_FAILED',
   [KycRequestStatus.FAILED_PERMANENT]: 'PREVIOUS_ATTEMPT_FAILED',
-  // Not a duplicate: REIS was never contacted, so corrected data may be submitted again.
-  [KycRequestStatus.VALIDATION_FAILED]: undefined,
 };
 
 /**
- * Orchestrates one submission:
+ * One submission of a FLEXCUBE customer to REIS:
  *
- *   FLEXCUBE request -> mapper -> transformer -> create/persist case -> REIS onboard
- *   (fresh authentication inside the client) -> persist the onboarding result
+ *   FLEXCUBE request -> mapper -> transformer (systemId = CIF) -> case -> REIS onboard -> case result
+ *   -> REIS_FINAL_STATUS at once for CLEAN / REJECT (PENDING is finished by the REIS callback)
  *
- * KYC_REF_NO is the REIS systemId. Responsibilities stay separate: the mapper/transformer never
- * call REIS, the REIS client never touches the repository, the repository knows nothing of HTTP.
- *
- * Safety rules:
- *  - Nothing is ever retried or resubmitted automatically (retry/resubmission policy is TBD).
- *  - A repeated KYC_REF_NO returns a typed DUPLICATE result and makes no external call; the only
- *    exception is a case that failed VALIDATION (REIS never contacted).
- *  - Validation/mapping/transformation errors happen before REIS is contacted.
- *  - Only classification codes and safe text are persisted: never tokens, credentials, payloads,
- *    customer values, or REIS free text (instruction / errorMessage).
+ * Identity: REIS systemId = the FLEXCUBE CIF (CUSTOMER_NO); KYC_REF_NO + SEQ_NO stay the internal key.
+ * - The same revision is sent again only while REIS has not answered it (RETRYABLE_STATUSES); the poller decides
+ *   when (attempt limit and delay).
+ * - A higher SEQ_NO (CIF modified) replaces a closed previous revision.
+ * - Validation / mapping errors happen before REIS is called.
+ * - Only classification codes and safe text are persisted or logged, never customer values or REIS free text.
  */
-@Injectable()
 export class KycWorkflow implements IKycWorkflow {
   private readonly logger = new Logger(KycWorkflow.name);
 
   constructor(
-    @Inject(FLEXCUBE_TO_CANONICAL_MAPPER) private readonly mapper: IFlexcubeToCanonicalMapper,
-    @Inject(CANONICAL_TO_REIS_TRANSFORMER)
+    private readonly mapper: IFlexcubeToCanonicalMapper,
     private readonly transformer: ICanonicalToReisTransformer,
-    @Inject(KYC_CASE_REPOSITORY) private readonly cases: IKycCaseRepository,
-    @Inject(REIS_ONBOARDING_CLIENT) private readonly reis: IReisOnboardingClient,
-    @Inject(FLEXCUBE_STATUS_UPDATER) private readonly flexcube: IFlexcubeStatusUpdater,
+    private readonly cases: IKycCaseRepository,
+    private readonly reis: IReisOnboardingClient,
+    private readonly flexcube: IFlexcubeStatusUpdater,
   ) {}
 
   async submit(
     request: FlexcubeCustomerRequest,
-    options: SubmitOptions = {},
+    options: SubmitOptions,
   ): Promise<KycSubmissionResult> {
-    const seqNo = options.seqNo ?? 1;
+    const { seqNo } = options;
     if (!Number.isInteger(seqNo) || seqNo < 1) {
       throw new Error('Internal error: seqNo must be a positive integer');
     }
@@ -98,16 +82,11 @@ export class KycWorkflow implements IKycWorkflow {
       );
     }
 
-    // 1. Idempotency: the same submission (KYC_REF_NO + SEQ_NO) is never sent twice
-    //    (VALIDATION_FAILED excepted). A newer SEQ_NO (amendment) is allowed once the previous
-    //    submission is closed; while it is still in progress the amendment is reported as duplicate.
+    // 1. Idempotency: a revision REIS already answered is never sent again. A newer SEQ_NO (amendment) is
+    //    allowed once the previous revision is closed.
     const existing = await this.cases.findByKycRefNo(kycRefNo);
     const amendment = existing !== null && seqNo > existing.seqNo;
-    if (
-      existing &&
-      !amendment &&
-      existing.internalRequestStatus !== KycRequestStatus.VALIDATION_FAILED
-    ) {
+    if (existing && !amendment && !RETRYABLE_STATUSES.includes(existing.internalRequestStatus)) {
       return this.duplicate(existing);
     }
 
@@ -145,10 +124,7 @@ export class KycWorkflow implements IKycWorkflow {
       if (!reopened) return this.duplicate((await this.cases.findByKycRefNo(kycRefNo)) ?? existing);
       kycCase = reopened;
     } else if (existing) {
-      const reopened = await this.cases.reopenAfterValidationFailure(
-        existing.internalId,
-        canonicalType,
-      );
+      const reopened = await this.cases.reopenForRetry(existing.internalId, canonicalType);
       if (!reopened) return this.duplicate((await this.cases.findByKycRefNo(kycRefNo)) ?? existing);
       kycCase = reopened;
     } else {
@@ -172,7 +148,7 @@ export class KycWorkflow implements IKycWorkflow {
       kycCase = await this.cases.attachCustomerNo(kycCase.internalId, customerNo);
     }
 
-    // 4. Call REIS exactly once. The client authenticates afresh and never retries.
+    // 4. Call REIS once. The client authenticates afresh; retries are the poller's decision.
     await this.cases.updateInternalStatus(kycCase.internalId, KycRequestStatus.SUBMITTED_TO_REIS);
     let response;
     try {
@@ -219,9 +195,8 @@ export class KycWorkflow implements IKycWorkflow {
   }
 
   /**
-   * After an immediate final decision (CLEAN -> CUSTOMER, REJECT -> BLOCKED) the FLEXCUBE update
-   * is attempted once. A failure never loses the REIS decision: it is recorded as FAILED and the
-   * existing operator recovery (claimFlexcubeRecovery) can replay it.
+   * After an immediate final decision (CLEAN -> CUSTOMER, REJECT -> BLOCKED) the FLEXCUBE update is attempted
+   * once. A failure never loses the REIS decision: it is recorded as FAILED on the case.
    */
   private async notifyFlexcubeIfFinal(kycCase: KycCase): Promise<KycCase> {
     if (
@@ -251,22 +226,32 @@ export class KycWorkflow implements IKycWorkflow {
     });
   }
 
-  // ---- identity (overridden by CifKycWorkflow) -------------------------------------------
+  // ---- identity: REIS systemId = CIF -------------------------------------------------------
 
-  /** The REIS request built from the canonical customer. Historical identity: systemId = KYC_REF_NO. */
-  protected toReisRequest(canonical: CanonicalKycCustomer): Promise<ReisOnboardingRequest> {
-    return this.transformer.transform(canonical);
+  /** The field mapping with systemId = CIF; a related party may not carry the same systemId. */
+  private async toReisRequest(canonical: CanonicalKycCustomer): Promise<ReisOnboardingRequest> {
+    const systemId = requireCif(canonical.customerNo);
+    const request = await this.transformer.transform(canonical);
+    if (request.relations.some((relation) => relation.systemId === systemId)) {
+      throw new InvalidFieldValueError('relation.systemId', 'collides with the primary CIF');
+    }
+    return { ...request, systemId };
   }
 
-  /** The REIS systemId of this submission, or null when it cannot be determined. */
-  protected identityOf(request: FlexcubeCustomerRequest): string | null {
-    return typeof request.KYC_REF_NO === 'string' ? request.KYC_REF_NO : null;
+  /** The CIF of the request, or null when it has none. */
+  private identityOf(request: FlexcubeCustomerRequest): string | null {
+    try {
+      return requireCif(request?.CUSTOMER_NO);
+    } catch (error) {
+      if (error instanceof CifIdentityError) return null;
+      throw error;
+    }
   }
 
   // ---- helpers ---------------------------------------------------------------------------
 
   private duplicate(kycCase: KycCase): SubmissionDuplicate {
-    const reason = DUPLICATE_REASON[kycCase.internalRequestStatus] ?? 'IN_PROGRESS_OR_UNCERTAIN';
+    const reason = DUPLICATE_REASON[kycCase.internalRequestStatus] ?? 'IN_PROGRESS';
     this.logger.warn({
       event: 'kyc.submission.duplicate',
       internalId: kycCase.internalId,

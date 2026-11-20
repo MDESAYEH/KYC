@@ -1,10 +1,7 @@
-import { OWN_MSGID_PATTERN } from '../staging/flexcube-staging';
-
 /**
  * PROVISIONAL SQL against the FLEXCUBE KYC tables. Table and column names come from the agreed
  * mapping file (RESI-KYC_Payload Field Mappings V2_5, column "FLEXCUBE Mapping V1") and from
- * Finexta's answers (03/11/2026); they still have to be verified on UAT1 once the integration
- * database user exists. Every value is a bind variable; the staging table name is validated.
+ * Finexta's answers (03/11/2026). Read-only; every value is a bind variable.
  *
  * Verified on UAT1 (10/11/2026, read-only check): STTM_KYC_RETAIL_CUSTOM.FUNDS_SOURCE (not
  * FUND_SOURCE), STTM_KYC_OTHER_TYPES is keyed by KYC_REFERENCE_NO, and STTM_KYC_CORPORATE has no
@@ -12,14 +9,7 @@ import { OWN_MSGID_PATTERN } from '../staging/flexcube-staging';
  *
  * Assumptions to confirm with Finexta (Abhilash):
  *  - the other KYC tables are keyed by KYC_REF_NO;
- *  - FLEXCUBE no longer blocks KYC authorization (the check moved to account level), so a KYC
- *    may already be authorized (AUTH_STAT = 'A') when it is first seen: AUTH_STAT is NOT used to
- *    select pending KYCs. What counts is "open" and "no staging row for the current MOD_NO";
  *  - STTM_KYC_MASTER.RECORD_STAT = 'O' means an open (not closed / deleted) record;
- *  - STTM_KYC_MASTER.MAKER_DT_STAMP is the maker date of the record and is compared with the
- *    mandatory cut-off FLEXCUBE_SYNC_START_DATE, so older KYCs are never sent;
- *  - STTM_KYC_MASTER.MOD_NO is the modification number used as the staging SEQ_NO
- *    ("for every mod a new SEQ_NO");
  *  - KYC_CUST_TYPE is R (retail / individual) or C (corporate);
  *  - STTM_KYC_CORP_KEYPERSONS and STTM_KYC_CORP_KEYPERSONS_CUSTOM are keyed by KYC_REF_NO and
  *    pair up on KYC_REF_NO + KYC_ID + NAME (KYC_ID is free user input, unique only per company);
@@ -38,9 +28,6 @@ import { OWN_MSGID_PATTERN } from '../staging/flexcube-staging';
  * is proven to exist (CORPORATE_TYPE_COLUMN_EXISTS_SQL) corporate KYCs are not selected at all.
  */
 
-/** KYC types a pass may take: individuals always, corporates only with a proven type column. */
-const typesSql = (corporate: boolean): string => (corporate ? "('R', 'C')" : "('R')");
-
 /**
  * Is the configured key-person type column present in STTM_KYC_CORP_KEYPERSONS_CUSTOM? (metadata only)
  * UAT1 read-only check (17/11/2026): KYC_KEYPERSON_TYPE exists in OBPPRD.STTM_KYC_CORP_KEYPERSONS_CUSTOM and
@@ -50,40 +37,6 @@ const typesSql = (corporate: boolean): string => (corporate ? "('R', 'C')" : "('
 export const CORPORATE_TYPE_COLUMN_EXISTS_SQL = `
   SELECT COUNT(*) AS N FROM ALL_TAB_COLUMNS
    WHERE TABLE_NAME = 'STTM_KYC_CORP_KEYPERSONS_CUSTOM' AND COLUMN_NAME = :columnName`;
-
-/**
- * Open KYCs created on / after the cut-off (:since, 'YYYY-MM-DDTHH24:MI:SS') whose current
- * modification has no staging row yet. AUTH_STAT is deliberately not filtered.
- */
-export const pendingKycSql = (stagingTable: string, corporate = true): string =>
-  `SELECT m.KYC_REF_NO, m.KYC_CUST_TYPE, m.MOD_NO
-     FROM STTM_KYC_MASTER m
-    WHERE m.RECORD_STAT = 'O'
-      AND m.KYC_CUST_TYPE IN ${typesSql(corporate)}
-      AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS')
-      AND NOT EXISTS (SELECT 1 FROM ${stagingTable} s
-                       WHERE s.KYC_REF_NO = m.KYC_REF_NO AND s.SEQ_NO = m.MOD_NO)
-    ORDER BY m.KYC_REF_NO
-    FETCH FIRST :maxRows ROWS ONLY`;
-
-/**
- * Our own rows left at N by an earlier failed pass (UUID MSGID, never claimed, nothing stored)
- * whose KYC is still open since the cut-off: same rules as pendingKycSql, same current MOD_NO.
- * Rows that are not ours (any other MSGID, e.g. a Finexta test row) never match.
- */
-export const stuckNewKycSql = (stagingTable: string, corporate = true): string =>
-  `SELECT m.KYC_REF_NO, m.KYC_CUST_TYPE, m.MOD_NO
-     FROM STTM_KYC_MASTER m
-     JOIN ${stagingTable} s ON s.KYC_REF_NO = m.KYC_REF_NO AND s.SEQ_NO = m.MOD_NO
-    WHERE s.PROCESS_STATUS = :newStatus
-      AND s.REQ_DATE IS NULL
-      AND s.REQUEST IS NULL
-      AND REGEXP_LIKE(s.MSGID, '${OWN_MSGID_PATTERN}', 'i')
-      AND m.RECORD_STAT = 'O'
-      AND m.KYC_CUST_TYPE IN ${typesSql(corporate)}
-      AND m.MAKER_DT_STAMP >= TO_DATE(:since, 'YYYY-MM-DD"T"HH24:MI:SS')
-    ORDER BY m.KYC_REF_NO
-    FETCH FIRST :maxRows ROWS ONLY`;
 
 export const INDIVIDUAL_KYC_SQL = `
   SELECT r.BIRTH_DATE, r.BIRTH_PLACE, r.PASSPORT_NO, r.PASSPORT_EXPIRY_DATE, r.PEP,

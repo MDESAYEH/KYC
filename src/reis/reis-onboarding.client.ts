@@ -14,9 +14,8 @@ import { ReisCallContext, ReisHttpTransport } from './transport/reis-http.transp
  * - The payload is an already-valid REIS request (relations nested inside it) and is sent as
  *   received: no transformation, no stripping, nested structures untouched. Relations are NEVER
  *   sent as separate calls.
- * - No retries here: re-sending an onboarding request could duplicate business operations,
- *   and the retry policy is still TBD.
- * - Does not touch persistence; the future workflow coordinates clients and repository.
+ * - No retries here: the trigger poller decides when a revision is sent again.
+ * - Does not touch persistence; KycWorkflow coordinates clients and repository.
  * - Logs only operation, HTTP status, duration, onboarding status and presence flags - never the
  *   payload, token, or personal data.
  */

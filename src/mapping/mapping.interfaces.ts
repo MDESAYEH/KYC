@@ -26,11 +26,6 @@ export interface IReferenceMappingRepository {
   /** Inserts, or updates the existing (type, value) row. Throws InvalidReferenceMappingError. */
   upsert(input: ReferenceMappingInput): Promise<ReferenceMappingEntry>;
   /** Throws UnmappedReferenceValueError when the (type, value) row does not exist. */
-  setActive(
-    type: ReferenceMappingType,
-    flexcubeValue: string,
-    active: boolean,
-  ): Promise<ReferenceMappingEntry>;
   list(type?: ReferenceMappingType): Promise<ReferenceMappingEntry[]>;
 }
 export const REFERENCE_MAPPING_REPOSITORY = Symbol('IReferenceMappingRepository');

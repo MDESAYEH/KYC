@@ -8,10 +8,7 @@ export interface IFlexcubeToCanonicalMapper {
 }
 export const FLEXCUBE_TO_CANONICAL_MAPPER = Symbol('IFlexcubeToCanonicalMapper');
 
-/**
- * Writes the final KYC result back to FLEXCUBE. The real mechanism is TBD (open item 7);
- * a mock implementation is used until the FLEXCUBE team provides it.
- */
+/** Writes the final KYC result back to FLEXCUBE (REIS_FINAL_STATUS on the staging row). */
 export interface IFlexcubeStatusUpdater {
   updateStatus(update: FlexcubeStatusUpdate): Promise<void>;
 }

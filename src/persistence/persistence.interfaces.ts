@@ -2,7 +2,6 @@ import { CustomerType } from '../canonical';
 import { ReisFinalStatus } from '../reis/reis-status';
 import {
   CaseError,
-  CaseCriteria,
   FinalStatusResult,
   FlexcubeUpdateResult,
   KycCase,
@@ -23,6 +22,18 @@ export interface AmendmentOptions {
 }
 
 /**
+ * Statuses of a submission the poller may send again for the same revision: REIS never answered it
+ * (validation failure, temporary failure, unknown outcome, or the process stopped during the call).
+ */
+export const RETRYABLE_STATUSES: readonly KycRequestStatus[] = [
+  KycRequestStatus.RECEIVED,
+  KycRequestStatus.SUBMITTED_TO_REIS,
+  KycRequestStatus.VALIDATION_FAILED,
+  KycRequestStatus.FAILED_RETRYABLE,
+  KycRequestStatus.DELIVERY_UNCERTAIN,
+];
+
+/**
  * Persistence for KYC correlation, audit and retry state. Independent of the database
  * technology: implementations (TypeORM today) stay inside the persistence module.
  *
@@ -32,10 +43,7 @@ export interface IKycCaseRepository {
   /** Creates a case in RECEIVED state. Throws DuplicateKycCaseError on kycRefNo/systemId reuse. */
   create(input: NewKycCase): Promise<KycCase>;
 
-  findByInternalId(internalId: string): Promise<KycCase | null>;
   findByKycRefNo(kycRefNo: string): Promise<KycCase | null>;
-  /** Used to correlate the /customerStatus callback. */
-  findByReisSystemId(reisSystemId: string): Promise<KycCase | null>;
 
   updateInternalStatus(internalId: string, status: KycRequestStatus): Promise<KycCase>;
 
@@ -51,14 +59,10 @@ export interface IKycCaseRepository {
   /** Input rejected before any REIS call (validation / mapping / transformation): VALIDATION_FAILED. */
   recordValidationFailure(internalId: string, error: CaseError): Promise<KycCase>;
   /**
-   * Moves a VALIDATION_FAILED case back to RECEIVED so corrected data can be submitted under the
-   * same KYC_REF_NO (REIS was never contacted). Returns null - changing nothing - if the case is
-   * not currently VALIDATION_FAILED. Clears the last error.
+   * Moves a case of a submission that may be sent again (RETRYABLE_STATUSES) back to RECEIVED, clearing the last
+   * error. Returns null - changing nothing - for any other status.
    */
-  reopenAfterValidationFailure(
-    internalId: string,
-    customerType: CustomerType,
-  ): Promise<KycCase | null>;
+  reopenForRetry(internalId: string, customerType: CustomerType): Promise<KycCase | null>;
   /**
    * A newer FLEXCUBE submission (higher SEQ_NO, i.e. an amendment) replaces a CLOSED previous one
    * (final status known, VALIDATION_FAILED or FAILED_PERMANENT): the case restarts at RECEIVED
@@ -101,14 +105,5 @@ export interface IKycCaseRepository {
    * never touched or lost when the update fails.
    */
   recordFlexcubeUpdateResult(internalId: string, result: FlexcubeUpdateResult): Promise<KycCase>;
-
-  /**
-   * Operator recovery: atomically moves a case with a final status from flexcube update FAILED to
-   * PENDING so exactly one caller runs the update. Returns null (changing nothing) otherwise.
-   */
-  claimFlexcubeRecovery(internalId: string): Promise<KycCase | null>;
-
-  /** Operational lookup (oldest-updated first). Returns full cases; callers must summarize them. */
-  findCases(criteria: CaseCriteria): Promise<KycCase[]>;
 }
 export const KYC_CASE_REPOSITORY = Symbol('IKycCaseRepository');

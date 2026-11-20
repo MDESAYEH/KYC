@@ -19,7 +19,8 @@ const DIAGNOSTIC_KEYS = [
   'title',
   'type',
 ] as const;
-const SENSITIVE_KEY = /password|token|secret|authorization|cookie|customer|cif|account|iban|card|passport|national|email|phone|address|birth|name|amount|balance|income|salary/i;
+const SENSITIVE_KEY =
+  /password|token|secret|authorization|cookie|customer|cif|account|iban|card|passport|national|email|phone|address|birth|name|amount|balance|income|salary/i;
 
 const normalizeContentType = (contentType: string | undefined): string | undefined => {
   if (!contentType) return undefined;
@@ -31,10 +32,7 @@ const redactText = (value: string): string =>
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[REDACTED_EMAIL]')
     .replace(/\b(?:\d[ -]?){7,}\d\b/g, '[REDACTED_NUMBER]')
     .replace(/\b(Bearer\s+)[^\s,;]+/gi, '$1[REDACTED]')
-    .replace(
-      /\b(password|token|secret|authorization|cookie)\s*[:=]\s*[^\s,;]+/gi,
-      '$1=[REDACTED]',
-    );
+    .replace(/\b(password|token|secret|authorization|cookie)\s*[:=]\s*[^\s,;]+/gi, '$1=[REDACTED]');
 
 const bounded = (value: string): Pick<ReisHttpErrorResponseDetails, 'body' | 'truncated'> => ({
   body: value.slice(0, MAX_BODY_LENGTH),
@@ -58,7 +56,8 @@ export function summarizeReisHttpErrorResponse(
       const diagnostics = DIAGNOSTIC_KEYS.flatMap((key) => {
         const value = record[key];
         if (value === undefined || value === null || SENSITIVE_KEY.test(key)) return [];
-        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') return [];
+        if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')
+          return [];
         const redacted = redactText(String(value));
         valueTruncated ||= redacted.length > MAX_VALUE_LENGTH;
         return [`${key}=${redacted.slice(0, MAX_VALUE_LENGTH)}`];

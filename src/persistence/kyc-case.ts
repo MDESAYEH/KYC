@@ -123,12 +123,3 @@ export interface FlexcubeUpdateResult {
   /** Safe text only; never customer data. */
   errorMessage?: string;
 }
-
-/** Query criteria for operational lookups. `limit` is mandatory (capped by the repository). */
-export interface CaseCriteria {
-  internalRequestStatus?: import('../common/kyc-status').KycRequestStatus;
-  flexcubeUpdateStatus?: FlexcubeUpdateStatus;
-  /** Only cases last updated before this instant. */
-  updatedBefore?: Date;
-  limit: number;
-}

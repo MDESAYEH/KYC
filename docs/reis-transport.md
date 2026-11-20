@@ -1,4 +1,4 @@
-# REIS transport (Step 3)
+# REIS transport
 
 ```
 onboard(request)
@@ -66,11 +66,11 @@ Relations are not separate calls: they are the `relations` array of the main req
 | `ReisConfigError` | (startup) | Invalid REIS configuration; names variables only |
 | `ReisApplicationError` | APPLICATION_ERROR | **Reserved** for a future confirmed REIS application-error contract; nothing raises it today |
 
-## Retry policy: still TBD
-`requestMayHaveReachedReis` is **diagnostic metadata only**: it never triggers an automatic retry. The clients **never retry**. Re-sending an onboarding request could duplicate business operations, and no retry rule is confirmed. Errors are only classified; the later workflow will apply the retry policy once it is decided.
+## Retry policy
+The clients **never retry** and `requestMayHaveReachedReis` is diagnostic metadata. Errors are only classified; the trigger poller decides whether a revision is sent again (`docs/flexcube-sync.md`).
 
 ## Security and logging
-- TLS certificate validation is always on: no custom agent, no `rejectUnauthorized`, `strictSSL` or `NODE_TLS_REJECT_UNAUTHORIZED` anywhere (a test scans production source, `package.json` and `.env.example`). `REIS_BASE_URL` must be `https` in production. Redirects are not followed, so the token is never re-sent elsewhere.
+- TLS certificate validation is always on: no custom agent, no `rejectUnauthorized`, `strictSSL` or `NODE_TLS_REJECT_UNAUTHORIZED` anywhere. `REIS_BASE_URL` must be `https` in production. Redirects are not followed, so the token is never re-sent elsewhere.
 - Credentials come only from `REIS_*` environment variables; the validated config hides the password from JSON/inspect output.
 - Thrown errors are built from our own text and never carry the Axios error (whose config holds headers and body).
 - Logs contain only: event, operation, HTTP status, duration, caller-supplied correlation id, form id, onboarding status, and presence flags (`hasReisId`, `hasRiskCalculationId`, `hasInstruction`, `hasErrorMessage`). Never: passwords, tokens, headers, request bodies, `errorMessage`/`instruction` text, ids' values, or personal data.

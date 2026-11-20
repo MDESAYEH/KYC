@@ -7,7 +7,6 @@ import { FlexcubeUpdateStatus, KycRequestStatus } from '../common/kyc-status';
 import { ReisFinalStatus, ReisOnboardingStatus } from '../reis/reis-status';
 import { KycCaseEntity } from './entities/kyc-case.entity';
 import {
-  CaseCriteria,
   CaseError,
   FinalStatusResult,
   FlexcubeUpdateResult,
@@ -20,15 +19,11 @@ import {
   DuplicateKycCaseError,
   KycCaseNotFoundError,
 } from './persistence.errors';
-import { AmendmentOptions, IKycCaseRepository } from './persistence.interfaces';
+import { AmendmentOptions, IKycCaseRepository, RETRYABLE_STATUSES } from './persistence.interfaces';
 
 const MAX_ERROR_CODE = 100;
 const MAX_ERROR_MESSAGE = 1000;
 const MAX_REIS_TEXT = 4000;
-const MAX_QUERY_LIMIT = 500;
-
-/** UTC 'YYYY-MM-DD HH:MM:SS', the format SQLite stores for datetime columns. */
-const sqlDate = (d: Date): string => d.toISOString().replace('T', ' ').slice(0, 19);
 
 /** Onboarding answers that are final at once (no /customerStatus webhook follows). */
 const IMMEDIATE_FINAL_STATUS: Partial<Record<ReisOnboardingStatus, ReisFinalStatus>> = {
@@ -122,16 +117,8 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
     return this.require(entity.internalId);
   }
 
-  async findByInternalId(internalId: string): Promise<KycCase | null> {
-    return this.findOne({ internalId });
-  }
-
   async findByKycRefNo(kycRefNo: string): Promise<KycCase | null> {
     return this.findOne({ kycRefNo });
-  }
-
-  async findByReisSystemId(reisSystemId: string): Promise<KycCase | null> {
-    return this.findOne({ reisSystemId });
   }
 
   async updateInternalStatus(internalId: string, status: KycRequestStatus): Promise<KycCase> {
@@ -208,10 +195,7 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
     });
   }
 
-  async reopenAfterValidationFailure(
-    internalId: string,
-    customerType: CustomerType,
-  ): Promise<KycCase | null> {
+  async reopenForRetry(internalId: string, customerType: CustomerType): Promise<KycCase | null> {
     const res = await this.dataSource
       .getRepository(KycCaseEntity)
       .createQueryBuilder()
@@ -222,9 +206,9 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
         lastErrorCode: null,
         lastErrorMessage: null,
       })
-      .where('internal_id = :internalId AND internal_request_status = :failed', {
+      .where('internal_id = :internalId AND internal_request_status IN (:...retryable)', {
         internalId,
-        failed: KycRequestStatus.VALIDATION_FAILED,
+        retryable: RETRYABLE_STATUSES,
       })
       .execute();
     if (!res.affected) return null;
@@ -453,40 +437,6 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
       .where('internal_id = :internalId', { internalId })
       .execute();
     return this.require(internalId);
-  }
-
-  async claimFlexcubeRecovery(internalId: string): Promise<KycCase | null> {
-    const res = await this.dataSource
-      .getRepository(KycCaseEntity)
-      .createQueryBuilder()
-      .update()
-      .set({ flexcubeUpdateStatus: FlexcubeUpdateStatus.PENDING })
-      .where(
-        'internal_id = :internalId AND final_status IS NOT NULL AND flexcube_update_status = :failed',
-        { internalId, failed: FlexcubeUpdateStatus.FAILED },
-      )
-      .execute();
-    if (!res.affected) return null;
-    return this.require(internalId);
-  }
-
-  async findCases(criteria: CaseCriteria): Promise<KycCase[]> {
-    const qb = this.dataSource.getRepository(KycCaseEntity).createQueryBuilder('c');
-    if (criteria.internalRequestStatus) {
-      qb.andWhere('c.internalRequestStatus = :status', { status: criteria.internalRequestStatus });
-    }
-    if (criteria.flexcubeUpdateStatus) {
-      qb.andWhere('c.flexcubeUpdateStatus = :fx', { fx: criteria.flexcubeUpdateStatus });
-    }
-    if (criteria.updatedBefore) {
-      qb.andWhere('c.updatedAt < :before', { before: sqlDate(criteria.updatedBefore) });
-    }
-    const rows = await qb
-      .orderBy('c.updatedAt', 'ASC')
-      .addOrderBy('c.internalId', 'ASC')
-      .limit(Math.min(Math.max(1, Math.floor(criteria.limit)), MAX_QUERY_LIMIT))
-      .getMany();
-    return rows.map(toDomain);
   }
 
   // ---- internals -------------------------------------------------------------------------

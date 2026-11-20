@@ -1,13 +1,12 @@
 import { Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { oraCode } from '../flexcube/oracle-error';
-import { SyncCycleError } from './flexcube-sync.service';
 
-/** One polling pass (TriggerSyncService in the application; FlexcubeSyncService is the legacy KYC_MASTER pass). */
+/** One polling pass (TriggerSyncService). */
 export interface PollingPass {
   runOnce(): Promise<unknown>;
 }
 
-/** Runs the polling pass every intervalMs, never two passes at the same time. */
+/** Runs the polling pass every intervalMs (from the end of the previous pass): never two at the same time. */
 export class FlexcubeSyncScheduler implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(FlexcubeSyncScheduler.name);
   private timer: NodeJS.Timeout | null = null;
@@ -40,17 +39,7 @@ export class FlexcubeSyncScheduler implements OnApplicationBootstrap, OnModuleDe
     try {
       await this.sync?.runOnce();
     } catch (error) {
-      this.logger.error(
-        error instanceof SyncCycleError
-          ? {
-              event: 'flexcube.sync.failed',
-              runId: error.runId,
-              phase: error.phase,
-              durationMs: error.durationMs,
-              error: error.code,
-            }
-          : { event: 'flexcube.sync.failed', error: oraCode(error) },
-      );
+      this.logger.error({ event: 'flexcube.sync.failed', error: oraCode(error) });
     }
   }
 

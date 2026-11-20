@@ -31,48 +31,37 @@ export interface AppConfig {
     /** Optional owner schema of the FLEXCUBE tables (FLEXCUBE_DB_SCHEMA), e.g. FCUBS. */
     dbSchema: string | undefined;
     stagingTable: string;
-    /** Poll FLEXCUBE for saved KYCs (FLEXCUBE_POLL_ENABLED=true). Off by default. */
+    /** Poll the FLEXCUBE trigger table (FLEXCUBE_POLL_ENABLED=true). Off by default. */
     pollEnabled: boolean;
-    /** Agreed 10 seconds-5 minutes; default 2 minutes. */
+    /** Pause between two passes (FLEXCUBE_POLL_INTERVAL_MS, minimum 1000, default 10000). */
     pollIntervalMs: number;
     /** Maximum KYCs taken per pass. */
     pollBatchSize: number;
     /**
-     * Cut-off (FLEXCUBE_SYNC_START_DATE, ISO date/timestamp) compared with
-     * STTM_KYC_MASTER.MAKER_DT_STAMP. Mandatory when polling is enabled (validated at startup).
+     * Cut-off (FLEXCUBE_SYNC_START_DATE, ISO date/timestamp) compared with STTM_KYC_MASTER.MAKER_DT_STAMP.
+     * Mandatory when polling is enabled (validated at startup).
      */
     syncStartDate: string | undefined;
     /** Staging PROCESS_STATUS of a claimed row (FLEXCUBE_STAGING_STATUS_IN_PROGRESS, default W). */
     stagingStatusInProgress: string;
     /** Column of STTM_KYC_CORP_KEYPERSONS holding the party type I / C (FLEXCUBE_KEYPERSON_TYPE_COLUMN). */
     keypersonTypeColumn: string;
-    /**
-     * Words written to REIS_FINAL_STATUS (FLEXCUBE_FINAL_STATUS_VOCABULARY): 'approved-blocked' (default,
-     * Finexta 10/11/2026) or 'clean-pending-blocked' (stated 17/11/2026, not yet confirmed against the real
-     * constraints). Validated when the status updater is built.
-     */
-    finalStatusVocabulary: string;
-    /**
-     * Send-guard acknowledgements (FLEXCUBE_SYNC_UNCERTAIN_ACK, comma separated KYC_REF_NO:SEQ_NO):
-     * rows whose uncertain delivery an operator reconciled; they no longer stop sending.
-     */
-    syncUncertainAck: string[];
-    /**
-     * Trigger-table poller rollout (FLEXCUBE_SYNC_CIF_ALLOWLIST, comma separated CIFs): only these CIFs are sent.
-     * Empty = refused at startup unless FLEXCUBE_SYNC_ALL_CIFS=true (every CIF set to U by FCUBS).
-     */
+    /** Attempts per CIF revision before it is set to E (FLEXCUBE_SYNC_MAX_ATTEMPTS, default 5). */
+    syncMaxAttempts: number;
+    /** Wait before another attempt (FLEXCUBE_SYNC_RETRY_DELAY_MS, default 60000). */
+    syncRetryDelayMs: number;
+    /** Only these CIFs are sent (FLEXCUBE_SYNC_CIF_ALLOWLIST, comma separated). Empty = every CIF. */
     syncCifAllowlist: string[];
-    syncAllCifs: boolean;
   };
   /** Production DB is TBD. sqlite (local dev/test only) is the only supported type for now. */
   database: { type: string; sqlitePath: string | undefined };
-  retry: { maxAttempts: number | undefined; baseDelayMs: number | undefined };
 }
 
 const num = (v: string | undefined): number | undefined =>
   v !== undefined && v.trim() !== '' && !Number.isNaN(Number(v)) ? Number(v) : undefined;
 const clamp = (v: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, Math.round(v)));
+const atLeast = (v: number, min: number): number => Math.max(min, Math.round(v));
 const str = (v: string | undefined): string | undefined =>
   v !== undefined && v.trim() !== '' ? v : undefined;
 
@@ -99,21 +88,17 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
       dbSchema: str(env.FLEXCUBE_DB_SCHEMA),
       stagingTable: str(env.FLEXCUBE_STAGING_TABLE) ?? 'STTM_KYC_REIS_PAYLOAD_CUSTOM',
       pollEnabled: env.FLEXCUBE_POLL_ENABLED === 'true',
-      pollIntervalMs: clamp(num(env.FLEXCUBE_POLL_INTERVAL_MS) ?? 120_000, 10_000, 300_000),
+      pollIntervalMs: atLeast(num(env.FLEXCUBE_POLL_INTERVAL_MS) ?? 10_000, 1_000),
       pollBatchSize: clamp(num(env.FLEXCUBE_POLL_BATCH_SIZE) ?? 20, 1, 200),
       syncStartDate: str(env.FLEXCUBE_SYNC_START_DATE),
       stagingStatusInProgress: str(env.FLEXCUBE_STAGING_STATUS_IN_PROGRESS) ?? 'W',
       keypersonTypeColumn: str(env.FLEXCUBE_KEYPERSON_TYPE_COLUMN) ?? 'KYC_KEYPERSON_TYPE',
-      finalStatusVocabulary: str(env.FLEXCUBE_FINAL_STATUS_VOCABULARY) ?? 'approved-blocked',
-      syncUncertainAck: (env.FLEXCUBE_SYNC_UNCERTAIN_ACK ?? '')
-        .split(',')
-        .map((v) => v.trim())
-        .filter(Boolean),
+      syncMaxAttempts: atLeast(num(env.FLEXCUBE_SYNC_MAX_ATTEMPTS) ?? 5, 1),
+      syncRetryDelayMs: atLeast(num(env.FLEXCUBE_SYNC_RETRY_DELAY_MS) ?? 60_000, 1_000),
       syncCifAllowlist: (env.FLEXCUBE_SYNC_CIF_ALLOWLIST ?? '')
         .split(',')
         .map((v) => v.trim())
         .filter(Boolean),
-      syncAllCifs: env.FLEXCUBE_SYNC_ALL_CIFS === 'true',
     },
     database: {
       type: env.DB_TYPE ?? 'sqlite',
@@ -122,6 +107,5 @@ export function loadConfiguration(env: NodeJS.ProcessEnv = process.env): AppConf
         str(env.DB_SQLITE_PATH) ??
         ((env.NODE_ENV ?? 'development') === 'production' ? undefined : './var/kyc-local.sqlite'),
     },
-    retry: { maxAttempts: num(env.RETRY_MAX_ATTEMPTS), baseDelayMs: num(env.RETRY_BASE_DELAY_MS) },
   };
 }

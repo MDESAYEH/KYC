@@ -10,67 +10,34 @@ import { ReisFinalStatus } from '../../reis/reis-status';
  *     REQUEST            JSON request sent to REIS
  *     RESPONSE           initial JSON response received from REIS
  *     PROCESS_STATUS     N new | W in progress | S success (REIS answered) | E failure
- *     REIS_FINAL_STATUS  APPROVED | BLOCKED (FLEXCUBE authorizes the KYC from this column)
+ *     REIS_FINAL_STATUS  CLEAN | BLOCKED (FLEXCUBE authorizes accounts only for CLEAN)
  *     RETRY_COUNT        retry attempts for the same submission
  *     REQ_DATE           when the request was sent (set when the row is claimed)
  *     RES_DATE           when the submission completed (S or E)
  */
-/** Values FLEXCUBE reads in REIS_FINAL_STATUS. */
-export enum StagingFinalStatus {
-  APPROVED = 'APPROVED',
-  BLOCKED = 'BLOCKED',
-}
-
 /**
- * The words FLEXCUBE reads in REIS_FINAL_STATUS. Two vocabularies exist in the project history:
- *  - approved-blocked (Finexta 10/11/2026, the DEFAULT until the new one is confirmed in writing together
- *    with the table constraints and the FLEXCUBE logic that consumes the column): APPROVED / BLOCKED;
- *  - clean-pending-blocked (stated by Finexta on 17/11/2026, NOT yet confirmed against the real
- *    constraints): CLEAN / PENDING / BLOCKED. PENDING is written when REIS answers PENDING, so FLEXCUBE can
- *    tell "waiting for REIS" from "not processed" (NULL); a later final decision replaces PENDING.
+ * Words FLEXCUBE reads in REIS_FINAL_STATUS (Finexta 17/11/2026, in use on UAT1). Account authorization
+ * is allowed only for CLEAN. PENDING is never written by this code; a final decision may replace it.
  */
-export type FinalStatusVocabulary = 'approved-blocked' | 'clean-pending-blocked';
+export const StagingFinalStatus = {
+  CLEAN: 'CLEAN',
+  PENDING: 'PENDING',
+  BLOCKED: 'BLOCKED',
+} as const;
 
-export interface DecisionValues {
-  approved: string;
-  blocked: string;
-  /** null: the vocabulary has no interim word (PENDING is never written). */
-  pending: string | null;
-}
-
-export function decisionValues(vocabulary: FinalStatusVocabulary): DecisionValues {
-  switch (vocabulary) {
-    case 'approved-blocked':
-      return { approved: 'APPROVED', blocked: 'BLOCKED', pending: null };
-    case 'clean-pending-blocked':
-      return { approved: 'CLEAN', blocked: 'BLOCKED', pending: 'PENDING' };
-    default:
-      throw new Error(
-        'FLEXCUBE_FINAL_STATUS_VOCABULARY must be approved-blocked or clean-pending-blocked',
-      );
-  }
-}
-
-/**
- * REIS CUSTOMER -> approved word (APPROVED, or CLEAN in the new vocabulary), BLOCKED -> BLOCKED.
- * An unknown status is never mapped (no default: Timeout is not PENDING, a failure is not APPROVED).
- */
-export function toStagingFinalStatus(
-  status: ReisFinalStatus,
-  vocabulary: FinalStatusVocabulary = 'approved-blocked',
-): string {
-  const words = decisionValues(vocabulary);
+/** REIS CUSTOMER -> CLEAN, BLOCKED -> BLOCKED. Anything else is never mapped. */
+export function toStagingFinalStatus(status: ReisFinalStatus): string {
   switch (status) {
     case ReisFinalStatus.CUSTOMER:
-      return words.approved;
+      return StagingFinalStatus.CLEAN;
     case ReisFinalStatus.BLOCKED:
-      return words.blocked;
+      return StagingFinalStatus.BLOCKED;
     default:
       throw new Error(`Unsupported REIS final status "${String(status)}"`);
   }
 }
 
-/** Minimal SQL port so the staging logic is testable without an Oracle database. */
+/** Minimal SQL port (Oracle in the application, a recorder in the SQL catalog). */
 export type SqlBinds = Record<string, string | number | null>;
 export type SqlRow = Record<string, unknown>;
 

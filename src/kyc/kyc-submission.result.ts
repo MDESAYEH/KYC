@@ -5,22 +5,16 @@ import { ReisOnboardingStatus } from '../reis/reis-status';
 /** Where in the flow a submission failed. */
 export type FailureStage = 'VALIDATION' | 'REIS_AUTHENTICATE' | 'REIS_ONBOARDING';
 
-/**
- * Why a repeated KYC_REF_NO was not processed again. No external call is made and nothing is
- * changed in any of these cases: automatic resubmission is not allowed until the Bank defines the
- * retry / resubmission business rule.
- */
+/** Why an existing case was not sent again (no REIS call, nothing changed). */
 export type DuplicateReason =
-  /** Case exists but REIS was not (yet) confirmed contacted: in flight, or interrupted. */
-  | 'IN_PROGRESS_OR_UNCERTAIN'
+  /** Another submission of the case is being processed right now. */
+  | 'IN_PROGRESS'
   | 'ALREADY_CLEAN'
-  /** PENDING at REIS: waiting for the later /customerStatus callback. */
+  /** PENDING at REIS: waiting for the /customerStatus callback. */
   | 'AWAITING_FINAL_STATUS'
   | 'ALREADY_REJECTED'
   | 'ALREADY_FINALIZED'
-  /** A previous onboarding call may have reached REIS and its outcome is unknown. */
-  | 'DELIVERY_UNCERTAIN'
-  /** A previous attempt failed (retry/resubmission rule TBD). */
+  /** REIS refused this revision permanently; a corrected CIF (new SEQ_NO) is needed. */
   | 'PREVIOUS_ATTEMPT_FAILED';
 
 /** REIS answered CLEAN, PENDING or REJECT. All three are normal, distinct outcomes. */
@@ -36,14 +30,14 @@ export interface SubmissionOnboarded {
   reisResponse: object;
 }
 
-/** The KYC_REF_NO already has a case; no REIS call was made. */
+/** The revision already has a case that is not sent again; no REIS call was made. */
 export interface SubmissionDuplicate {
   outcome: 'DUPLICATE';
   reason: DuplicateReason;
   kycCase: KycCase;
 }
 
-/** The submission failed; the failure is classified and persisted. Never retried automatically. */
+/** The submission failed; the failure is classified and persisted (persistedStatus decides a retry). */
 export interface SubmissionFailed {
   outcome: 'FAILED';
   stage: FailureStage;
@@ -51,9 +45,8 @@ export interface SubmissionFailed {
   code: string;
   /** Diagnostic only: true when the onboarding request may have been received by REIS. */
   requestMayHaveReachedReis: boolean;
-  /** Failure status; a submission hold has no persisted case (kycCase is null). */
   persistedStatus: KycRequestStatus;
-  /** Also null for a CIF submission hold, which intentionally writes no case. */
+  /** Null when the request was too broken to create a case (no KYC_REF_NO / CIF / customer type). */
   kycCase: KycCase | null;
   /** Body that was (or would have been) sent to REIS, when transformation succeeded. */
   reisRequest?: object;

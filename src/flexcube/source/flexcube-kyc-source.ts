@@ -6,7 +6,6 @@ import {
 } from '../dto/flexcube-customer.request';
 import {
   assertSafeColumnName,
-  assertSafeTableName,
   DEFAULT_KEYPERSON_TYPE_COLUMN,
   IFlexcubeSqlExecutor,
   SqlRow,
@@ -19,23 +18,13 @@ import {
   INDIVIDUAL_KYC_SQL,
   INDIVIDUAL_PRODUCTS_SQL,
   CORPORATE_TYPE_COLUMN_EXISTS_SQL,
-  pendingKycSql,
-  stuckNewKycSql,
 } from './flexcube-kyc.queries';
-import { oraCode } from '../oracle-error';
 
-/** A saved KYC waiting for REIS; seqNo is the staging SEQ_NO (FLEXCUBE MOD_NO). */
-export interface PendingKyc {
+/** The KYC whose details are read. */
+export interface KycToLoad {
   kycRefNo: string;
-  seqNo: number;
   customerType: 'INDIVIDUAL' | 'CORPORATE';
 }
-
-const toPendingKyc = (r: SqlRow): PendingKyc => ({
-  kycRefNo: String(r.KYC_REF_NO),
-  seqNo: Number(r.MOD_NO),
-  customerType: r.KYC_CUST_TYPE === 'C' ? 'CORPORATE' : 'INDIVIDUAL',
-});
 
 /** The KYC detail rows could not be found (e.g. deleted or not yet committed). */
 export class KycDetailsNotFoundError extends Error {
@@ -92,41 +81,18 @@ const text = (value: unknown): string | undefined => {
  * mapper validates them (relationship code, systemId, mandatory fields).
  */
 export class FlexcubeKycSource {
-  private readonly pendingSql: { corporate: string; individualOnly: string };
-  private readonly stuckNewSql: { corporate: string; individualOnly: string };
   private readonly keypersonsSql: string;
   private readonly typeColumn: string;
 
   /** Corporate KYCs are taken only after the type column was proven to exist (refresh below). */
   private corporateSupported = false;
   private corporateCheckedAt = Number.NEGATIVE_INFINITY;
-  /** Why corporates are (not) supported: COLUMN_FOUND, COLUMN_NOT_FOUND or the Oracle error code. */
-  corporateSupportReason = 'NOT_CHECKED';
 
-  private readonly since: string;
-
-  /** `syncStartDate` is the raw FLEXCUBE_SYNC_START_DATE; an invalid value is rejected here. */
   constructor(
     private readonly db: IFlexcubeSqlExecutor,
-    stagingTable: string,
-    syncStartDate: string,
     /** Column holding the key-person type (FLEXCUBE_KEYPERSON_TYPE_COLUMN). */
     keypersonTypeColumn: string = DEFAULT_KEYPERSON_TYPE_COLUMN,
   ) {
-    const since = normalizeSyncStartDate(syncStartDate);
-    if (since === undefined) {
-      throw new Error('FLEXCUBE_SYNC_START_DATE must be an ISO date or timestamp (YYYY-MM-DD)');
-    }
-    this.since = since;
-    const table = assertSafeTableName(stagingTable);
-    this.pendingSql = {
-      corporate: pendingKycSql(table, true),
-      individualOnly: pendingKycSql(table, false),
-    };
-    this.stuckNewSql = {
-      corporate: stuckNewKycSql(table, true),
-      individualOnly: stuckNewKycSql(table, false),
-    };
     this.typeColumn = assertSafeColumnName(keypersonTypeColumn);
     this.keypersonsSql = corporateKeypersonsSql(this.typeColumn);
   }
@@ -145,43 +111,16 @@ export class FlexcubeKycSource {
         columnName: this.typeColumn.toUpperCase(),
       });
       this.corporateSupported = Number(rows[0]?.N) > 0;
-      this.corporateSupportReason = this.corporateSupported ? 'COLUMN_FOUND' : 'COLUMN_NOT_FOUND';
-    } catch (error) {
+    } catch {
       this.corporateSupported = false;
-      this.corporateSupportReason = oraCode(error);
     }
     return this.corporateSupported;
   }
 
-  get supportsCorporate(): boolean {
-    return this.corporateSupported;
-  }
-
-  async findPending(maxRows: number): Promise<PendingKyc[]> {
-    const sql = this.corporateSupported
-      ? this.pendingSql.corporate
-      : this.pendingSql.individualOnly;
-    const rows = await this.db.query(sql, { since: this.since, maxRows });
-    return rows.map(toPendingKyc);
-  }
-
-  /** Our own staging rows left at N (never claimed) by an earlier failed pass, still open. */
-  async findOwnStuckNew(maxRows: number): Promise<PendingKyc[]> {
-    const sql = this.corporateSupported
-      ? this.stuckNewSql.corporate
-      : this.stuckNewSql.individualOnly;
-    const rows = await this.db.query(sql, {
-      newStatus: 'N',
-      since: this.since,
-      maxRows,
-    });
-    return rows.map(toPendingKyc);
-  }
-
-  async load(pending: PendingKyc): Promise<FlexcubeCustomerRequest> {
-    return pending.customerType === 'CORPORATE'
-      ? this.loadCorporate(pending.kycRefNo)
-      : this.loadIndividual(pending.kycRefNo);
+  async load(kyc: KycToLoad): Promise<FlexcubeCustomerRequest> {
+    return kyc.customerType === 'CORPORATE'
+      ? this.loadCorporate(kyc.kycRefNo)
+      : this.loadIndividual(kyc.kycRefNo);
   }
 
   private async one(sql: string, kycRefNo: string): Promise<SqlRow> {

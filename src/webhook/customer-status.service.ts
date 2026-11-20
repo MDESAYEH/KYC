@@ -13,7 +13,6 @@ import {
 } from '../persistence/webhook-event';
 import { CustomerStatusDto } from './dto/customer-status.dto';
 import { IWebhookSecurityStrategy, WEBHOOK_SECURITY_STRATEGY } from './webhook.interfaces';
-import { singleTrialCallbackIsHeld } from '../kyc/single-kyc-trial.scope';
 
 export type CustomerStatusResult = Exclude<WebhookProcessingResult, 'PROCESSING'>;
 
@@ -108,15 +107,6 @@ export class CustomerStatusService {
 
     // 4. Correlate by systemId and apply the final status idempotently.
     const dto = plainToInstance(CustomerStatusDto, raw);
-    // The old, never-sent single-trial identity (systemId = KYC_REF_NO) is quarantined: no status update,
-    // no business effect (see singleTrialCallbackIsHeld). The CIF identity uses the exact-revision route.
-    if (singleTrialCallbackIsHeld(dto.systemId)) {
-      const done = await this.events.complete(event.eventId, {
-        processingResult: 'RECONCILIATION_REQUIRED',
-        detailCode: 'SINGLE_TRIAL_CALLBACK_QUARANTINED',
-      });
-      return this.finish(done, 'RECONCILIATION_REQUIRED');
-    }
     const applied = await this.cases.applyFinalStatus(dto.systemId, dto.status, dto.customerId);
     const kycCase = applied.kycCase;
     const caseId = kycCase?.internalId ?? null;

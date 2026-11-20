@@ -1,22 +1,19 @@
-import { FlexcubeKycSource, PendingKyc } from '../flexcube/source/flexcube-kyc-source';
+import { CustomerTriggerSource, TriggerWork } from '../flexcube/source/customer-trigger.source';
+import { FlexcubeKycSource } from '../flexcube/source/flexcube-kyc-source';
 import { IFlexcubeSqlExecutor, SqlBinds, SqlRow } from '../flexcube/staging/flexcube-staging';
 import { extractBindNames } from '../flexcube/staging/sql-binds';
 import { StagingFlexcubeStatusUpdater } from '../flexcube/staging/staging-flexcube-status-updater';
 import {
-  StagingBackupRow,
   StagingProcessStatus,
   StagingSubmissionRepository,
 } from '../flexcube/staging/staging-submission.repository';
 import { ReisFinalStatus } from '../reis/reis-status';
-import { SingleKycTrialRepository } from './single-kyc-trial.repository';
-import { CustomerTriggerSource, ReadyCustomer } from '../flexcube/source/customer-trigger.source';
 
 /**
  * The exact SQL text of EVERY statement the integration layer can send to FLEXCUBE, collected by
- * running the real source / repository / updater / single-trial code against a recording executor
- * that never talks to a database (synthetic arguments, no customer data). The `check:oracle-sql`
- * tool hands each statement to Oracle's parser only; tests check the same list against the bind
- * guard and the parse-only guard.
+ * running the real source / repository / updater code against a recording executor that never talks
+ * to a database (synthetic arguments, no customer data). The `check:oracle-sql` tool hands each
+ * statement to Oracle's parser only.
  */
 export interface CatalogEntry {
   /** Which code path issues it (for the report). */
@@ -74,92 +71,55 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   const since = '2026-01-01T00:00:00';
   const key = { kycRefNo: 'CATALOG', seqNo: 1 };
   const msgId = '00000000-0000-4000-8000-000000000000';
-  const individual: PendingKyc = { ...key, customerType: 'INDIVIDUAL' };
-  const corporate: PendingKyc = { ...key, customerType: 'CORPORATE' };
-  const backupRow: StagingBackupRow = {
-    ...key,
-    msgId,
-    processStatus: StagingProcessStatus.ERROR,
-    request: null,
-    response: '{"error":"ORA-01745"}',
-    retryCount: 1,
-    reqDate: null,
-    resDate: null,
-    reisFinalStatus: null,
-  };
 
-  const source = new FlexcubeKycSource(rec, opts.stagingTable, since, opts.keypersonTypeColumn);
-  await step('source.findPending, individuals only', () => source.findPending(1));
-  await step('source.findOwnStuckNew, individuals only', () => source.findOwnStuckNew(1));
+  const source = new FlexcubeKycSource(rec, opts.keypersonTypeColumn);
   await step('source.refreshCorporateSupport', () => source.refreshCorporateSupport(0));
-  await step('source.findPending', () => source.findPending(1));
-  await step('source.findOwnStuckNew', () => source.findOwnStuckNew(1));
-  await step('source.load individual', () => source.load(individual));
-  await step('source.load corporate', () => source.load(corporate));
+  await step('source.load individual', () => source.load({ ...key, customerType: 'INDIVIDUAL' }));
+  await step('source.load corporate', () => source.load({ ...key, customerType: 'CORPORATE' }));
 
-  const trigger = new CustomerTriggerSource(rec, opts.stagingTable, since, true);
-  const ready: ReadyCustomer = {
+  const trigger = new CustomerTriggerSource(rec, opts.stagingTable, since);
+  const work: TriggerWork = {
     customerNo: 'CATALOG',
-    kycRefNo: key.kycRefNo,
-    seqNo: 1,
-    kycModNo: 1,
+    ...key,
     customerType: 'INDIVIDUAL',
     stagingRows: 0,
     higherRows: 0,
+    retryCount: 0,
+    picked: false,
   };
-  await step('trigger.findReady, individuals only', () => trigger.findReady(1));
+  await step('trigger.findReady, individuals only', () => trigger.findReady(1, false));
   await step('trigger.findReady', () => trigger.findReady(1, true));
-  await step('trigger.markPicked', () => trigger.markPicked(ready));
-  await step('trigger.markError', () => trigger.markError(ready));
+  await step('trigger.findRetryDue, individuals only', () => trigger.findRetryDue(1, false, 60));
+  await step('trigger.findRetryDue', () => trigger.findRetryDue(1, true, 60));
+  await step('trigger.markPicked', () => trigger.markPicked(work));
+  await step('trigger.markError', () => trigger.markError(work));
 
   const repo = new StagingSubmissionRepository(rec, opts.stagingTable, opts.inProgressStatus);
   await step('staging.insertNew', () => repo.insertNew(key, msgId));
   await step('staging.claim', () => repo.claim(key));
   await step('staging.release', () => repo.release(key));
   await step('staging.fail', () => repo.fail(key, { error: 'ORA-00000' }));
+  await step('staging.recoverStale', () => repo.recoverStale(5));
+  await step('staging.scheduleRetry', () => repo.scheduleRetry(key, { request: {}, response: {} }));
+  await step('staging.scheduleRetry (response only)', () =>
+    repo.scheduleRetry(key, { response: {} }),
+  );
   await step('staging.complete', () =>
     repo.complete(key, { status: StagingProcessStatus.SUCCESS, request: {}, response: {} }),
   );
   await step('staging.complete (response only)', () =>
     repo.complete(key, { status: StagingProcessStatus.ERROR, response: {} }),
   );
-  await step('staging.findStuckInProgress', () => repo.findStuckInProgress(15, 1));
-  await step('staging.findDeliveryRisk', () => repo.findDeliveryRisk(5, 1));
-  await step('staging.readRowForBackup', () => repo.readRowForBackup(key));
 
-  for (const vocabulary of ['approved-blocked', 'clean-pending-blocked'] as const) {
-    const updater = new StagingFlexcubeStatusUpdater(rec, opts.stagingTable, vocabulary);
-    await step(`updater.finalStatus (${vocabulary})`, () =>
-      updater.updateStatus({
-        kycRefNo: key.kycRefNo,
-        customerNo: null,
-        finalStatus: ReisFinalStatus.CUSTOMER,
-        seqNo: key.seqNo,
-        idempotencyKey: 'catalog',
-      }),
-    );
-  }
-
-  if (!['N', 'E', 'S'].includes(opts.inProgressStatus)) {
-    const trial = new SingleKycTrialRepository(rec, opts.stagingTable, opts.inProgressStatus);
-    await step('trial.master', () => trial.master());
-    await step('trial.assertNoHigherRevision', () => trial.assertNoHigherRevision());
-    await step('trial.restoreNeverSent', () => trial.restoreNeverSent(backupRow));
-    await step('trial.claim', () => trial.claim(msgId));
-    await step('trial.markPicked (trigger U -> P)', () => trial.markPicked());
-    await step('trial.release', () => trial.release(msgId));
-    await step('trial.markTriggerError (trigger P -> E)', () => trial.markTriggerError());
-    await step('trial.triggerStatus', () => trial.triggerStatus());
-    await step('trial.resetUndelivered', () =>
-      trial.resetUndelivered({
-        ...backupRow,
-        response: '{"wire":null,"delivery":"UNCERTAIN"}',
-      }),
-    );
-    await step('trial.resetTrigger (trigger E -> U)', () => trial.resetTrigger());
-    await step('trial.storeIntent', () => trial.storeIntent(msgId, {}));
-    await step('trial.writeWireStatus', () => trial.writeWireStatus('CLEAN', msgId));
-    await step('trial.complete', () => trial.complete(msgId, {}, true));
-  }
+  const updater = new StagingFlexcubeStatusUpdater(rec, opts.stagingTable);
+  await step('updater.finalStatus', () =>
+    updater.updateStatus({
+      kycRefNo: key.kycRefNo,
+      customerNo: null,
+      finalStatus: ReisFinalStatus.CUSTOMER,
+      seqNo: key.seqNo,
+      idempotencyKey: 'catalog',
+    }),
+  );
   return rec.entries;
 }

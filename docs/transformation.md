@@ -90,4 +90,4 @@ Required text is only checked for presence; values are never trimmed, case-folde
 `MissingRequiredFieldError`, `InvalidFieldValueError`, `SourceOfIncomeRuleNotConfiguredError` (all `TransformationError`, permanent/non-retryable) and `UnmappedReferenceValueError` (no active approved mapping, or an unapproved document code). Messages name fields/rules, not customer data.
 
 ## Not part of this step
-Production FLEXCUBE controller, orchestration workflow, database writes during transformation, REIS HTTP calls from the mapper/transformer, `/customerStatus`, FLEXCUBE status update, automatic retry, and any Bank-unapproved reference data (the mapping table stays empty; tests use synthetic `T-*`/`R-*` values only).
+Production FLEXCUBE controller, orchestration workflow, database writes during transformation, REIS HTTP calls from the mapper/transformer, `/customerStatus`, FLEXCUBE status update, automatic retry, and any Bank-unapproved reference data (the mapping table stays empty).

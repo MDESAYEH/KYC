@@ -1,7 +1,7 @@
 /**
  * Whether the REIS final decision has been pushed to FLEXCUBE. Tracked SEPARATELY from the REIS
  * final status: a valid REIS callback must never be lost because the FLEXCUBE update failed.
- * The real FLEXCUBE mechanism is TBD (a mock is used meanwhile). No automatic retry exists.
+ * The FLEXCUBE side is REIS_FINAL_STATUS on the staging row (a mock without a FLEXCUBE database).
  */
 export enum FlexcubeUpdateStatus {
   /** No REIS final status yet. */
