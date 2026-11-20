@@ -92,6 +92,7 @@ export const retryDueSql = (stagingTable: string, corporate: boolean): string =>
 /**
  * Our E rows that failed validation and were never sent (REQUEST empty, RESPONSE stage VALIDATION), last checked
  * before the delay, trigger E and the CIF still at the same revision: the KYC is read and validated again.
+ * Only the latest revision of a KYC is rechecked: an older row stays E as history once a higher SEQ_NO exists.
  */
 export const recheckDueSql = (stagingTable: string, corporate: boolean): string =>
   `SELECT t.CUSTOMER_NO, t.KYC_REF_NO, c.MOD_NO AS CIF_MOD_NO, m.KYC_CUST_TYPE
@@ -101,6 +102,8 @@ export const recheckDueSql = (stagingTable: string, corporate: boolean): string 
      JOIN STTM_KYC_MASTER m ON m.KYC_REF_NO = t.KYC_REF_NO
     WHERE s.PROCESS_STATUS = :errorStatus
       AND s.REQUEST IS NULL
+      AND NOT EXISTS (SELECT 1 FROM ${stagingTable} h
+                       WHERE h.KYC_REF_NO = s.KYC_REF_NO AND h.SEQ_NO > s.SEQ_NO)
       AND INSTR(s.RESPONSE, :validationMarker) > 0
       AND REGEXP_LIKE(s.MSGID, '${OWN_MSGID_PATTERN}', 'i')
       AND (s.RES_DATE IS NULL OR s.RES_DATE < SYSDATE - (:delaySeconds / 86400))

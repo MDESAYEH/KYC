@@ -18,6 +18,7 @@ previous one ended, so two passes never overlap. A failing pass is logged and th
 4. **Rechecks due**: our `E` rows that failed validation and were never sent (`REQUEST` empty, `RESPONSE` stage
    `VALIDATION`), last checked more than `FLEXCUBE_SYNC_RECHECK_DELAY_MS` ago, trigger `E`, CIF still at that `MOD_NO`.
    The KYC is read and validated again, so data corrected in FLEXCUBE is sent without a new CIF revision.
+   Only the highest `SEQ_NO` of the KYC is rechecked; older rows stay `E` as history.
 5. Optional filter `FLEXCUBE_SYNC_CIF_ALLOWLIST`. Corporates only while the key-person type column is proven to exist.
 
 For each CIF revision:
