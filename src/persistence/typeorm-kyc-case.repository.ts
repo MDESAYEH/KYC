@@ -195,7 +195,11 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
     });
   }
 
-  async reopenForRetry(internalId: string, customerType: CustomerType): Promise<KycCase | null> {
+  async reopenForRetry(
+    internalId: string,
+    customerType: CustomerType,
+    statuses: readonly KycRequestStatus[] = RETRYABLE_STATUSES,
+  ): Promise<KycCase | null> {
     const res = await this.dataSource
       .getRepository(KycCaseEntity)
       .createQueryBuilder()
@@ -208,7 +212,7 @@ export class TypeOrmKycCaseRepository implements IKycCaseRepository {
       })
       .where('internal_id = :internalId AND internal_request_status IN (:...retryable)', {
         internalId,
-        retryable: RETRYABLE_STATUSES,
+        retryable: statuses,
       })
       .execute();
     if (!res.affected) return null;

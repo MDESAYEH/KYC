@@ -86,7 +86,10 @@ export class KycWorkflow implements IKycWorkflow {
     //    allowed once the previous revision is closed.
     const existing = await this.cases.findByKycRefNo(kycRefNo);
     const amendment = existing !== null && seqNo > existing.seqNo;
-    if (existing && !amendment && !RETRYABLE_STATUSES.includes(existing.internalRequestStatus)) {
+    const reopenable = options.afterRejection
+      ? [...RETRYABLE_STATUSES, KycRequestStatus.FAILED_PERMANENT]
+      : RETRYABLE_STATUSES;
+    if (existing && !amendment && !reopenable.includes(existing.internalRequestStatus)) {
       return this.duplicate(existing);
     }
 
@@ -124,7 +127,11 @@ export class KycWorkflow implements IKycWorkflow {
       if (!reopened) return this.duplicate((await this.cases.findByKycRefNo(kycRefNo)) ?? existing);
       kycCase = reopened;
     } else if (existing) {
-      const reopened = await this.cases.reopenForRetry(existing.internalId, canonicalType);
+      const reopened = await this.cases.reopenForRetry(
+        existing.internalId,
+        canonicalType,
+        reopenable,
+      );
       if (!reopened) return this.duplicate((await this.cases.findByKycRefNo(kycRefNo)) ?? existing);
       kycCase = reopened;
     } else {
@@ -226,6 +233,10 @@ export class KycWorkflow implements IKycWorkflow {
     return this.cases.recordFlexcubeUpdateResult(kycCase.internalId, {
       status: FlexcubeUpdateStatus.APPLIED,
     });
+  }
+
+  async preview(request: FlexcubeCustomerRequest): Promise<object> {
+    return this.toReisRequest(this.mapper.map(request));
   }
 
   // ---- identity: REIS systemId = CIF -------------------------------------------------------

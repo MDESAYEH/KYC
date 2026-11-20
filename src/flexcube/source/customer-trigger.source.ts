@@ -41,6 +41,8 @@ export interface TriggerWork {
    * without a new CIF revision. Its trigger is E and its staging row E.
    */
   recheck: boolean;
+  /** For a recheck after a REIS rejection: the REQUEST that was refused (sent again only if the data changed). */
+  previousRequest?: string;
 }
 
 const types = (corporate: boolean) => (corporate ? "('R', 'C')" : "('R')");
@@ -90,21 +92,20 @@ export const retryDueSql = (stagingTable: string, corporate: boolean): string =>
     FETCH FIRST :maxRows ROWS ONLY`;
 
 /**
- * Our E rows that failed validation and were never sent (REQUEST empty, RESPONSE stage VALIDATION), last checked
+ * Our E rows that failed validation (RESPONSE stage VALIDATION) or whose data REIS refused (HTTP 4xx), last checked
  * before the delay, trigger E and the CIF still at the same revision: the KYC is read and validated again.
  * Only the latest revision of a KYC is rechecked: an older row stays E as history once a higher SEQ_NO exists.
  */
 export const recheckDueSql = (stagingTable: string, corporate: boolean): string =>
-  `SELECT t.CUSTOMER_NO, t.KYC_REF_NO, c.MOD_NO AS CIF_MOD_NO, m.KYC_CUST_TYPE
+  `SELECT t.CUSTOMER_NO, t.KYC_REF_NO, c.MOD_NO AS CIF_MOD_NO, m.KYC_CUST_TYPE, s.REQUEST AS PREVIOUS_REQUEST
      FROM ${stagingTable} s
      JOIN ${customerTriggerTable} t ON t.KYC_REF_NO = s.KYC_REF_NO
      JOIN STTM_CUSTOMER c ON c.CUSTOMER_NO = t.CUSTOMER_NO AND c.MOD_NO = s.SEQ_NO
      JOIN STTM_KYC_MASTER m ON m.KYC_REF_NO = t.KYC_REF_NO
     WHERE s.PROCESS_STATUS = :errorStatus
-      AND s.REQUEST IS NULL
       AND NOT EXISTS (SELECT 1 FROM ${stagingTable} h
                        WHERE h.KYC_REF_NO = s.KYC_REF_NO AND h.SEQ_NO > s.SEQ_NO)
-      AND INSTR(s.RESPONSE, :validationMarker) > 0
+      AND (INSTR(s.RESPONSE, :validationMarker) > 0 OR INSTR(s.RESPONSE, :rejectedMarker) > 0)
       AND REGEXP_LIKE(s.MSGID, '${OWN_MSGID_PATTERN}', 'i')
       AND (s.RES_DATE IS NULL OR s.RES_DATE < SYSDATE - (:delaySeconds / 86400))
       AND t.READY_TO_SCAN = :errorStatus
@@ -115,6 +116,8 @@ export const recheckDueSql = (stagingTable: string, corporate: boolean): string 
 
 /** Marker of a validation failure in the staging RESPONSE (written by the poller). */
 export const VALIDATION_MARKER = '"stage":"VALIDATION"';
+/** Marker of a REIS refusal of the data (HTTP 4xx other than 401 / 403). */
+export const REJECTED_MARKER = '"error":"REIS_ONBOARDING_HTTP_ERROR"';
 
 /** U (or E for a recheck) -> P only while the CIF is still at the staged revision. */
 export const markPickedSql = `UPDATE ${customerTriggerTable} t
@@ -139,6 +142,7 @@ const toWork = (r: SqlRow, picked: boolean, recheck = false): TriggerWork => ({
   retryCount: recheck ? 0 : Number(r.RETRY_COUNT ?? 0),
   picked,
   recheck,
+  ...(recheck && r.PREVIOUS_REQUEST != null ? { previousRequest: String(r.PREVIOUS_REQUEST) } : {}),
 });
 
 export class CustomerTriggerSource {
@@ -196,7 +200,7 @@ export class CustomerTriggerSource {
     return rows.map((r) => toWork(r, true));
   }
 
-  /** Validation failures whose recheck delay has passed (trigger E, staging E, never sent). */
+  /** Validation failures and REIS data refusals whose recheck delay has passed (trigger E, staging E). */
   async findRecheckDue(
     maxRows: number,
     corporate: boolean,
@@ -205,6 +209,7 @@ export class CustomerTriggerSource {
     const rows = await this.db.query(this.sql.recheck[corporate ? 'corporate' : 'individual'], {
       errorStatus: TRIGGER_ERROR,
       validationMarker: VALIDATION_MARKER,
+      rejectedMarker: REJECTED_MARKER,
       delaySeconds,
       maxRows,
     });

@@ -57,6 +57,12 @@ export function classifyPreReisFailure(error: unknown): FailureClassification | 
   return null;
 }
 
+/** The HTTP status text plus REIS' own reason (bounded, redacted: reis-error-response.ts). */
+function withReisReason(error: ReisClientError): string {
+  const reason = (error as { responseDetails?: { body?: string } }).responseDetails?.body;
+  return reason ? `${error.message}: ${reason}` : error.message;
+}
+
 /**
  * REIS client failures. The poller sends FAILED_RETRYABLE and DELIVERY_UNCERTAIN again (attempt limit and
  * delay from .env); FAILED_PERMANENT is final for the revision.
@@ -114,7 +120,10 @@ export function classifyReisFailure(error: ReisClientError): FailureClassificati
     case 'HTTP_STATUS':
       return httpStatus >= 500
         ? failure(S, 'REIS_ONBOARDING_HTTP_5XX', KycRequestStatus.DELIVERY_UNCERTAIN, true)
-        : failure(S, 'REIS_ONBOARDING_HTTP_ERROR', KycRequestStatus.FAILED_PERMANENT, true);
+        : {
+            ...failure(S, 'REIS_ONBOARDING_HTTP_ERROR', KycRequestStatus.FAILED_PERMANENT, true),
+            message: withReisReason(error),
+          };
     case 'MALFORMED_RESPONSE':
       return failure(
         S,

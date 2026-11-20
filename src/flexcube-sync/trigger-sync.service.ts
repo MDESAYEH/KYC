@@ -4,6 +4,7 @@ import { KycRequestStatus } from '../common/kyc-status';
 import { oraCode, oracleErrorCode } from '../flexcube/oracle-error';
 import {
   CustomerTriggerSource,
+  REJECTED_MARKER,
   TriggerWork,
   VALIDATION_MARKER,
 } from '../flexcube/source/customer-trigger.source';
@@ -14,6 +15,7 @@ import {
   StagingProcessStatus,
   StagingSubmissionRepository,
 } from '../flexcube/staging/staging-submission.repository';
+import { FlexcubeCustomerRequest } from '../flexcube/dto/flexcube-customer.request';
 import { IKycWorkflow } from '../kyc/kyc.interfaces';
 import { DuplicateReason, KycSubmissionResult } from '../kyc/kyc-submission.result';
 import { requireCif } from '../reis/cif-identity';
@@ -85,7 +87,8 @@ const errorCode = (error: unknown) =>
  *  - REIS not reached, refused the token, or outcome unknown (timeout, 5xx, crash): staging back to N with
  *    RETRY_COUNT + 1, trigger stays P; the retry pass sends it again after the delay, up to maxAttempts,
  *    then staging E and trigger E;
- *  - REIS refused the data (4xx): E at once; a corrected CIF comes back from FCUBS as a new revision (U);
+ *  - REIS refused the data (4xx): E, and checked again every recheck delay: sent again only when the request
+ *    built from FLEXCUBE differs from the refused one (data corrected), or as a new revision (U);
  *  - the KYC cannot be built (missing / invalid data, never sent): E, and checked again every recheck delay, so
  *    data corrected in FLEXCUBE is sent without a new CIF revision;
  *  - database problem before REIS: the claim is given back, nothing counted.
@@ -172,7 +175,7 @@ export class TriggerSyncService {
       }
       step = 'claim';
       const got = work.recheck
-        ? await this.staging.reclaimFailed(key, VALIDATION_MARKER)
+        ? await this.staging.reclaimFailed(key, [VALIDATION_MARKER, REJECTED_MARKER])
         : await this.staging.claim(key);
       if (!got) {
         // Already sent, failed or being processed: for a U trigger that is an error, for a retry or a recheck
@@ -190,6 +193,12 @@ export class TriggerSyncService {
       }
       const request = { ...raw, CUSTOMER_NO: work.customerNo };
 
+      if (work.previousRequest !== undefined && (await this.unchanged(work, request))) {
+        // REIS refused exactly this request: wait until the data is corrected in FLEXCUBE.
+        await this.staging.unclaimFailed(key);
+        return { outcome: 'skipped', technical: false };
+      }
+
       if (!picked) {
         step = 'pick';
         if (!(await this.triggers.markPicked(work))) {
@@ -201,7 +210,10 @@ export class TriggerSyncService {
       }
 
       step = 'submit';
-      const result = await this.workflow.submit(request, { seqNo: work.seqNo });
+      const result = await this.workflow.submit(request, {
+        seqNo: work.seqNo,
+        afterRejection: work.previousRequest !== undefined,
+      });
       step = 'complete';
       return { outcome: await this.record(work, key, result), technical: false };
     } catch (error) {
@@ -248,6 +260,17 @@ export class TriggerSyncService {
       await this.markError(work);
       return { outcome: 'failed', technical: false };
     }
+  }
+
+  /** The request built from today's data is the one REIS already refused. */
+  private async unchanged(work: TriggerWork, request: FlexcubeCustomerRequest): Promise<boolean> {
+    let previous: unknown;
+    try {
+      previous = JSON.parse(work.previousRequest as string);
+    } catch {
+      return false;
+    }
+    return JSON.stringify(await this.workflow.preview(request)) === JSON.stringify(previous);
   }
 
   /** Stores the workflow result on the staging row and decides retry / done. */

@@ -107,7 +107,9 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   await step('staging.release', () => repo.release(key));
   await step('staging.fail', () => repo.fail(key, { error: 'ORA-00000' }));
   await step('staging.recoverStale', () => repo.recoverStale(5));
-  await step('staging.reclaimFailed', () => repo.reclaimFailed(key, '"stage":"VALIDATION"'));
+  await step('staging.reclaimFailed', () =>
+    repo.reclaimFailed(key, ['"stage":"VALIDATION"', '"error":"REIS_ONBOARDING_HTTP_ERROR"']),
+  );
   await step('staging.unclaimFailed', () => repo.unclaimFailed(key));
   await step('staging.scheduleRetry', () => repo.scheduleRetry(key, { request: {}, response: {} }));
   await step('staging.scheduleRetry (response only)', () =>

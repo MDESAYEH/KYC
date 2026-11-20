@@ -36,7 +36,7 @@ export interface StagingKey {
  *   recoverStale   W -> N  a worker died while the row was claimed: RETRY_COUNT + 1, RES_DATE = now
  *   complete       W -> S  REIS answered (or W -> E after the last attempt); RES_DATE = now
  *   fail           N/W -> E  the KYC itself cannot be sent (data error, attempts exhausted)
- *   reclaimFailed  E -> W  recheck of a validation failure that was never sent: RETRY_COUNT reset to 0
+ *   reclaimFailed  E -> W  recheck of a validation failure or a REIS data refusal: RETRY_COUNT reset to 0
  *   unclaimFailed  W -> E  the recheck stopped before REIS (technical error, trigger moved)
  *
  * REIS_FINAL_STATUS is written separately (StagingFlexcubeStatusUpdater). Only our own rows (UUID MSGID) are
@@ -83,19 +83,20 @@ export class StagingSubmissionRepository {
   }
 
   /**
-   * E -> W for a recheck: only a row that was never sent (REQUEST empty) and failed validation
-   * (RESPONSE carries `marker`). RETRY_COUNT restarts at 0: a validation failure is not a REIS attempt.
+   * E -> W for a recheck: only a row that failed validation or whose data REIS refused (RESPONSE carries one of
+   * the markers). RETRY_COUNT restarts at 0.
    */
-  async reclaimFailed(key: StagingKey, marker: string): Promise<boolean> {
+  async reclaimFailed(key: StagingKey, markers: [string, string]): Promise<boolean> {
     const { rowsAffected } = await this.db.execute(
       `UPDATE ${this.table} SET PROCESS_STATUS = :targetStatus, REQ_DATE = SYSDATE, RETRY_COUNT = 0 ` +
         `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :sourceStatus ` +
-        `AND REQUEST IS NULL AND INSTR(RESPONSE, :validationMarker) > 0`,
+        `AND (INSTR(RESPONSE, :validationMarker) > 0 OR INSTR(RESPONSE, :rejectedMarker) > 0)`,
       {
         ...key,
         targetStatus: this.inProgress,
         sourceStatus: StagingProcessStatus.ERROR,
-        validationMarker: marker,
+        validationMarker: markers[0],
+        rejectedMarker: markers[1],
       },
     );
     return rowsAffected === 1;

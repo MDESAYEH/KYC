@@ -62,7 +62,11 @@ export interface IKycCaseRepository {
    * Moves a case of a submission that may be sent again (RETRYABLE_STATUSES) back to RECEIVED, clearing the last
    * error. Returns null - changing nothing - for any other status.
    */
-  reopenForRetry(internalId: string, customerType: CustomerType): Promise<KycCase | null>;
+  reopenForRetry(
+    internalId: string,
+    customerType: CustomerType,
+    statuses?: readonly KycRequestStatus[],
+  ): Promise<KycCase | null>;
   /**
    * A newer FLEXCUBE submission (higher SEQ_NO, i.e. an amendment) replaces a CLOSED previous one
    * (final status known, VALIDATION_FAILED or FAILED_PERMANENT): the case restarts at RECEIVED
