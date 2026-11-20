@@ -178,11 +178,22 @@ export class TriggerSyncService {
         ? await this.staging.reclaimFailed(key, RECHECK_MARKERS)
         : await this.staging.claim(key);
       if (!got) {
-        // Already sent, failed or being processed: for a U trigger that is an error, for a retry or a recheck
-        // someone else has it.
-        return work.picked || work.recheck
-          ? { outcome: 'skipped', technical: false }
-          : this.refuse(work, runId, 'REVISION_ALREADY_STAGED');
+        if (work.picked || work.recheck) return { outcome: 'skipped', technical: false };
+        if (await this.staging.alreadySent(key)) {
+          // U again for a revision REIS already answered: nothing is sent twice. The trigger goes back to P (done)
+          // and a PENDING answer stored before REIS_FINAL_STATUS was written gets PENDING now.
+          await this.staging.markPendingAnswer(key);
+          await this.triggers.markPicked(work);
+          this.logger.warn({
+            event: 'flexcube.trigger.alreadySent',
+            runId,
+            kycRefNo: work.kycRefNo,
+            seqNo: work.seqNo,
+          });
+          return { outcome: 'skipped', technical: false };
+        }
+        // Failed or being processed: the recheck / retry passes handle it.
+        return this.refuse(work, runId, 'REVISION_ALREADY_STAGED');
       }
       claimed = true;
 

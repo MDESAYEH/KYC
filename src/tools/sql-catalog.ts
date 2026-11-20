@@ -107,6 +107,8 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   await step('staging.release', () => repo.release(key));
   await step('staging.fail', () => repo.fail(key, { error: 'ORA-00000' }));
   await step('staging.recoverStale', () => repo.recoverStale(5));
+  await step('staging.alreadySent', () => repo.alreadySent(key));
+  await step('staging.markPendingAnswer', () => repo.markPendingAnswer(key));
   await step('staging.reclaimFailed', () =>
     repo.reclaimFailed(key, [
       '"stage":"VALIDATION"',

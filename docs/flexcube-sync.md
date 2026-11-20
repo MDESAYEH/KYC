@@ -41,7 +41,8 @@ staging row N (new MSGID, RETRY_COUNT 0) -> claimed W -> KYC details read -> tri
 | KYC cannot be built (missing details, invalid field, CIF mismatch), never sent | `E`, `RESPONSE` stage `VALIDATION` + `detail` | `E` | read again every `FLEXCUBE_SYNC_RECHECK_DELAY_MS`; sent once the data is valid |
 | Database error before REIS | claim given back (`N`), not counted | unchanged | next pass |
 | REIS answered but the result could not be stored | stays `W` | `P` | recovered as stale, sent again |
-| A higher `SEQ_NO` already exists for the KYC / revision already finished | unchanged | `E` | a person looks at it |
+| `U` again for a revision REIS already answered (`S`) | unchanged (a stored PENDING answer gets `REIS_FINAL_STATUS = PENDING`) | `P` | nothing is sent twice |
+| A higher `SEQ_NO` already exists for the KYC | unchanged | `E` | a person looks at it |
 
 A retry sends the same revision again with the same `systemId` (CIF). Retries of an uncertain delivery (timeout, 5xx)
 can reach REIS twice; REIS treats a repeated `systemId` as the same customer. When the local case shows REIS already

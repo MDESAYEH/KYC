@@ -109,6 +109,32 @@ export class StagingSubmissionRepository {
     return rowsAffected === 1;
   }
 
+  /** The revision was already answered by REIS (PROCESS_STATUS S). */
+  async alreadySent(key: StagingKey): Promise<boolean> {
+    const rows = await this.db.query(
+      `SELECT COUNT(*) AS N FROM ${this.table} ` +
+        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :doneStatus`,
+      { ...key, doneStatus: StagingProcessStatus.SUCCESS },
+    );
+    return Number(rows[0]?.N) > 0;
+  }
+
+  /** S row whose stored REIS answer is PENDING and REIS_FINAL_STATUS still empty -> PENDING. */
+  async markPendingAnswer(key: StagingKey): Promise<boolean> {
+    const { rowsAffected } = await this.db.execute(
+      `UPDATE ${this.table} SET REIS_FINAL_STATUS = :pendingStatus ` +
+        `WHERE KYC_REF_NO = :kycRefNo AND SEQ_NO = :seqNo AND PROCESS_STATUS = :doneStatus ` +
+        `AND REIS_FINAL_STATUS IS NULL AND INSTR(RESPONSE, :pendingAnswer) > 0`,
+      {
+        ...key,
+        pendingStatus: StagingFinalStatus.PENDING,
+        doneStatus: StagingProcessStatus.SUCCESS,
+        pendingAnswer: '"status":"PENDING"',
+      },
+    );
+    return rowsAffected === 1;
+  }
+
   /** W -> E: a recheck stopped before REIS; the row keeps its previous RESPONSE. */
   async unclaimFailed(key: StagingKey): Promise<boolean> {
     return this.move(key, this.inProgress, StagingProcessStatus.ERROR, 'RES_DATE = SYSDATE');
