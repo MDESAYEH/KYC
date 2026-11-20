@@ -3,6 +3,7 @@ import {
   IFlexcubeSqlExecutor,
   isUniqueViolation,
   OWN_MSGID_PATTERN,
+  StagingFinalStatus,
 } from './flexcube-staging';
 
 /** PROCESS_STATUS values agreed with Finexta. */
@@ -34,7 +35,8 @@ export interface StagingKey {
  *   release        W -> N  technical failure before REIS was called (nothing counted)
  *   scheduleRetry  W -> N  the attempt failed and may be repeated: RETRY_COUNT + 1, RES_DATE = now
  *   recoverStale   W -> N  a worker died while the row was claimed: RETRY_COUNT + 1, RES_DATE = now
- *   complete       W -> S  REIS answered (or W -> E after the last attempt); RES_DATE = now
+ *   complete       W -> S  REIS answered (or W -> E after the last attempt); RES_DATE = now; a PENDING answer
+ *                          also sets REIS_FINAL_STATUS = PENDING (the callback replaces it with CLEAN / BLOCKED)
  *   fail           N/W -> E  the KYC itself cannot be sent (data error, attempts exhausted)
  *   reclaimFailed  E -> W  recheck of a validation failure or a REIS data refusal: RETRY_COUNT reset to 0
  *   unclaimFailed  W -> E  the recheck stopped before REIS (technical error, trigger moved)
@@ -124,6 +126,8 @@ export class StagingSubmissionRepository {
       status: StagingProcessStatus.SUCCESS | StagingProcessStatus.ERROR;
       request?: object;
       response?: object;
+      /** REIS answered PENDING: REIS_FINAL_STATUS = PENDING unless a decision is already stored. */
+      pending?: boolean;
     },
   ): Promise<void> {
     await this.finish(key, outcome.status, outcome, outcome.status === StagingProcessStatus.ERROR);
@@ -178,7 +182,7 @@ export class StagingSubmissionRepository {
   private async finish(
     key: StagingKey,
     target: string,
-    data: { request?: object; response?: object },
+    data: { request?: object; response?: object; pending?: boolean },
     countAttempt: boolean,
   ): Promise<void> {
     const set = ['PROCESS_STATUS = :targetStatus'];
@@ -195,6 +199,10 @@ export class StagingSubmissionRepository {
     if (data.response !== undefined) {
       set.push('RESPONSE = :responseJson');
       binds.responseJson = JSON.stringify(data.response);
+    }
+    if (data.pending) {
+      set.push('REIS_FINAL_STATUS = NVL(REIS_FINAL_STATUS, :pendingStatus)');
+      binds.pendingStatus = StagingFinalStatus.PENDING;
     }
     const { rowsAffected } = await this.db.execute(
       `UPDATE ${this.table} SET ${set.join(', ')}, ` +

@@ -18,6 +18,7 @@ import { FlexcubeCustomerRequest } from '../flexcube/dto/flexcube-customer.reque
 import { IKycWorkflow } from '../kyc/kyc.interfaces';
 import { DuplicateReason, KycSubmissionResult } from '../kyc/kyc-submission.result';
 import { requireCif } from '../reis/cif-identity';
+import { ReisOnboardingStatus } from '../reis/reis-status';
 
 export interface TriggerSyncSummary {
   found: number;
@@ -276,13 +277,26 @@ export class TriggerSyncService {
     result: KycSubmissionResult,
   ): Promise<Outcome> {
     switch (result.outcome) {
-      case 'ONBOARDED':
-        await this.staging.complete(key, {
+      case 'ONBOARDED': {
+        const done = {
           status: StagingProcessStatus.SUCCESS,
           request: result.reisRequest,
           response: result.reisResponse,
-        });
+        } as const;
+        if (result.reisOnboardingStatus !== ReisOnboardingStatus.PENDING) {
+          await this.staging.complete(key, done);
+          return 'sent';
+        }
+        try {
+          await this.staging.complete(key, { ...done, pending: true });
+        } catch (error) {
+          // The table refuses PENDING (CHECK constraint): store the answer without it, never lose it.
+          if (oracleErrorCode(error) === undefined) throw error;
+          this.logger.warn({ event: 'flexcube.staging.pendingRefused', error: oraCode(error) });
+          await this.staging.complete(key, done);
+        }
         return 'sent';
+      }
       case 'FAILED': {
         const response = { error: result.code, stage: result.stage, detail: result.message };
         if (RETRYABLE.has(result.persistedStatus)) {

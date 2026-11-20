@@ -27,7 +27,8 @@ For each CIF revision:
 ```
 staging row N (new MSGID, RETRY_COUNT 0) -> claimed W -> KYC details read -> trigger U -> P
 -> REIS (systemId = CIF) -> S with REQUEST / RESPONSE
-   CLEAN -> REIS_FINAL_STATUS = CLEAN, REJECT -> BLOCKED at once; PENDING -> the /customerStatus callback finishes it
+   CLEAN -> REIS_FINAL_STATUS = CLEAN, REJECT -> BLOCKED at once;
+   PENDING -> REIS_FINAL_STATUS = PENDING, replaced by CLEAN / BLOCKED when the /customerStatus callback arrives
 ```
 
 ## Failures and retries

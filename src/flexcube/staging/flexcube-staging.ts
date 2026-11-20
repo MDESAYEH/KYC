@@ -17,7 +17,7 @@ import { ReisFinalStatus } from '../../reis/reis-status';
  */
 /**
  * Words FLEXCUBE reads in REIS_FINAL_STATUS (Finexta 17/11/2026, in use on UAT1). Account authorization
- * is allowed only for CLEAN. PENDING is never written by this code; a final decision may replace it.
+ * is allowed only for CLEAN. PENDING is written when REIS answers PENDING; the callback's decision replaces it.
  */
 export const StagingFinalStatus = {
   CLEAN: 'CLEAN',

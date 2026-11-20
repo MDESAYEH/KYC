@@ -122,6 +122,14 @@ export async function collectSqlCatalog(opts: CatalogOptions): Promise<CatalogEn
   await step('staging.complete', () =>
     repo.complete(key, { status: StagingProcessStatus.SUCCESS, request: {}, response: {} }),
   );
+  await step('staging.complete (PENDING)', () =>
+    repo.complete(key, {
+      status: StagingProcessStatus.SUCCESS,
+      request: {},
+      response: {},
+      pending: true,
+    }),
+  );
   await step('staging.complete (response only)', () =>
     repo.complete(key, { status: StagingProcessStatus.ERROR, response: {} }),
   );
