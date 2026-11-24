@@ -50,7 +50,7 @@ Relations are not separate calls: they are the `relations` array of the main req
 
 ## Response handling
 - `status` must be `CLEAN`, `PENDING` or `REJECT`; anything else fails (`ReisUnsupportedStatusError`), never coerced.
-- `riskCalculationId` / `reisId` keep their wire type (string or number, or null). `instruction` and `errorMessage` are preserved as response data. A finite numeric `instruction` is normalized to text before persistence; `errorMessage` must remain text or null.
+- `riskCalculationId` / `reisId` keep their wire type (string or number, or null). `instruction` and `errorMessage` are preserved as response data. A finite numeric `instruction` is normalized to text; an object-valued `instruction` is preserved as compact JSON text before persistence. `errorMessage` must remain text or null.
 - **A valid REJECT is a normal result**, even with an informational `errorMessage`; the workflow decides the business outcome and persists it. A non-empty `errorMessage` alone never causes a failure.
 - Undocumented fields are dropped.
 

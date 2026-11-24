@@ -68,10 +68,15 @@ function optionalText(
   if (field === 'instruction' && typeof v === 'number' && Number.isFinite(v)) {
     return String(v);
   }
+  // REIS returns a structured instruction for some decisions. Persist its exact
+  // JSON representation because the downstream contract stores response text.
+  if (field === 'instruction' && isObject(v)) {
+    return JSON.stringify(v);
+  }
   throw new ReisMalformedResponseError(
     'searchOnboardCustomer',
     field === 'instruction'
-      ? '"instruction" must be a string, number or null'
+      ? '"instruction" must be a string, number, object or null'
       : '"errorMessage" must be a string or null',
     correlationId,
   );
