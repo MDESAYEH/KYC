@@ -1,0 +1,242 @@
+{
+  "connected": true,
+  "tables": [
+    {
+      "table": "STTM_KYC_MASTER",
+      "readable": false,
+      "missingColumns": [
+        "KYC_REF_NO",
+        "KYC_CUST_TYPE",
+        "MOD_NO",
+        "AUTH_STAT"
+      ],
+      "availableColumns": [],
+      "error": "ORA-00942"
+    },
+    {
+      "table": "STTM_KYC_RETAIL",
+      "readable": true,
+      "missingColumns": [],
+      "availableColumns": [
+        "ACC_PURPOSE",
+        "ACC_TYPE",
+        "APPROVER_COMMENTS",
+        "BIRTH_COUNTRY",
+        "BIRTH_DATE",
+        "BIRTH_PLACE",
+        "BUSINESS_INCOME",
+        "DECLARED",
+        "FAX_ISD_NO",
+        "FAX_NO",
+        "HOME_ADDR_COUNTRY",
+        "HOME_COUNTRY_ADDR",
+        "INVESTMENT_INCOME",
+        "KYC_AMTS_CCY",
+        "KYC_COMMENTS",
+        "KYC_NXT_REVIEW_DATE",
+        "KYC_REF_NO",
+        "LOCAL_ADDR",
+        "LOCAL_ADDR_COUNTRY",
+        "MOBILE_TEL_NO",
+        "MOB_ISD_NO",
+        "NATIONALITY",
+        "OFFICE_TEL_NO",
+        "OFF_TEL_ISD_NO",
+        "OTHR_ACC_PURPOSE",
+        "OTHR_INCOME_SOURCES",
+        "OVERSEAS_INCOME",
+        "PASSPORT_EXPIRY_DATE",
+        "PASSPORT_NO",
+        "PA_GIVEN",
+        "PA_HOLDER_ADDRESS",
+        "PA_HOLDER_ADDR_COUNTRY",
+        "PA_HOLDER_NAME",
+        "PA_HOLDER_NATIONALTY",
+        "PA_HOLDER_TEL_ISD",
+        "PA_HOLDER_TEL_NO",
+        "PEP",
+        "PEP_REMARKS",
+        "PROF_BUSINESS_INCOME",
+        "RENTAL_INCOME",
+        "RESIDENCE_TEL_NO",
+        "RESIDENT",
+        "RES_TEL_ISD_NO",
+        "SALARY_INCOME",
+        "SSO_COMMENTS",
+        "TAX_CNTRY",
+        "TAX_ID",
+        "TOTAL_INCOME",
+        "TOTAL_NET_WORTH",
+        "US_RES_STATUS",
+        "VISA_EXPIRY_DATE",
+        "VISA_NUMBER",
+        "VST_US_PREV"
+      ],
+      "rows": 3040
+    },
+    {
+      "table": "STTM_KYC_RETAIL_CUSTOM",
+      "readable": true,
+      "missingColumns": [
+        "FUND_SOURCE"
+      ],
+      "availableColumns": [
+        "ACCOUNT_MANAGER_EMAIL",
+        "ACCOUNT_MANAGER_LOGIN",
+        "DISTRIBUTION_CHANNEL",
+        "ENTITY_TYPE",
+        "FIRST_NAME",
+        "FORM_ID",
+        "FUNDS_SOURCE",
+        "KYC_REF_NO",
+        "LAST_NAME",
+        "RELATION_PEP",
+        "SYSTEM"
+      ],
+      "rows": 18
+    },
+    {
+      "table": "STTM_KYC_OTHER_TYPES",
+      "readable": true,
+      "missingColumns": [
+        "KYC_REF_NO"
+      ],
+      "availableColumns": [
+        "BANK_STRUCTURE",
+        "DET_PURPOSE_COMM",
+        "DET_PURPOSE_IND",
+        "FI_BUSINESS_AREA",
+        "FI_OWNERSHIP",
+        "FI_STATUS",
+        "FI_TYPE",
+        "KYC_CUST_TYPE",
+        "KYC_REFERENCE_NO",
+        "OCCUPATION"
+      ],
+      "rows": 3029
+    },
+    {
+      "table": "STTM_KYC_RETAIL_PRODUCT_CUSTOM",
+      "readable": true,
+      "missingColumns": [],
+      "availableColumns": [
+        "KYC_REF_NO",
+        "PRODUCT_CODE"
+      ],
+      "rows": 10
+    },
+    {
+      "table": "STTM_KYC_CORPORATE",
+      "readable": true,
+      "missingColumns": [
+        "DISTRIBUTION_CHANNEL"
+      ],
+      "availableColumns": [
+        "ACC_PURPOSE",
+        "ACC_SOLICITED",
+        "ACC_SOLICITED_DATE",
+        "ANNUAL_TURNOVER",
+        "APPROVER_COMMENTS",
+        "AUDIT_DATE",
+        "BORROW_ACC_GRP",
+        "BUSINESS_APPROVAL",
+        "BUSINESS_NATURE",
+        "COMPANY_TYPE",
+        "COMPLIANCE_CLEARANCE",
+        "EMPLOYEE_NUMBER",
+        "FUNDS_SOURCE",
+        "GROUP_NAME",
+        "INTRODUCER_DTL",
+        "KYC_AMTS_CCY",
+        "KYC_COMMENTS",
+        "KYC_NXT_REVIEW_DATE",
+        "KYC_REF_NO",
+        "LOCAL_ABROAD_BRN",
+        "OTHR_ACC_PURPOSE",
+        "OTHR_COMPANY_TYPE",
+        "OTHR_SALARY_MODES",
+        "PARENT_CMPNY_COUNTRY",
+        "PRODUCTS_TRADED",
+        "SALARY_MODE",
+        "SSO_COMMENTS",
+        "TRADE_LICENCE_NO"
+      ],
+      "rows": 804
+    },
+    {
+      "table": "STTM_KYC_CORPORATE_CUSTOM",
+      "readable": true,
+      "missingColumns": [],
+      "availableColumns": [
+        "ACCOUNT_MANAGER_EMAIL",
+        "ACCOUNT_MANAGER_LOGIN",
+        "ACTIVITY",
+        "CRP_BUSINESS_NAME",
+        "DISTRIBUTION_CHANNEL",
+        "ENTITY_TYPE",
+        "FORM_ID",
+        "KYC_REF_NO",
+        "LEGAL_ENTITY",
+        "PEP",
+        "SYSTEM"
+      ],
+      "rows": 18
+    },
+    {
+      "table": "STTM_KYC_CORP_PRODUCT_CUSTOM",
+      "readable": true,
+      "missingColumns": [],
+      "availableColumns": [
+        "KYC_REF_NO",
+        "PRODUCT_CODE"
+      ],
+      "rows": 20
+    },
+    {
+      "table": "STTM_KYC_CORP_COUNTRY_CUSTOM",
+      "readable": true,
+      "missingColumns": [],
+      "availableColumns": [
+        "KYC_REF_NO",
+        "OPERATION_COUNTRY"
+      ],
+      "rows": 24
+    },
+    {
+      "table": "STTM_KYC_REIS_PAYLOAD_CUSTOM",
+      "readable": false,
+      "missingColumns": [
+        "KYC_REF_NO",
+        "SEQ_NO",
+        "MSGID",
+        "REQUEST",
+        "RESPONSE",
+        "PROCESS_STATUS",
+        "REIS_FINAL_STATUS",
+        "RETRY_COUNT",
+        "REQ_DATE",
+        "RES_DATE"
+      ],
+      "availableColumns": [],
+      "error": "ORA-00942"
+    }
+  ],
+  "similarObjects": [],
+  "dryRun": [],
+  "user": "REIS_KYC",
+  "currentSchema": "REIS_KYC",
+  "staging": {
+    "privileges": [],
+    "canInsert": false,
+    "canUpdate": false,
+    "hasDelete": false,
+    "ownedByUser": false,
+    "processStatuses": {}
+  },
+  "pending": {
+    "total": 0,
+    "individual": 0,
+    "corporate": 0,
+    "error": "ORA-00942"
+  }
+}

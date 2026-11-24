@@ -63,9 +63,16 @@ function optionalText(
 ): string | null | undefined {
   const v = json[field];
   if (v === undefined || v === null || typeof v === 'string') return v;
+  // REIS sometimes emits a numeric instruction code. Normalize it because the
+  // downstream contract persists response text only.
+  if (field === 'instruction' && typeof v === 'number' && Number.isFinite(v)) {
+    return String(v);
+  }
   throw new ReisMalformedResponseError(
     'searchOnboardCustomer',
-    `"${field}" must be a string or null`,
+    field === 'instruction'
+      ? '"instruction" must be a string, number or null'
+      : '"errorMessage" must be a string or null',
     correlationId,
   );
 }
