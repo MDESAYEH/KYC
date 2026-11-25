@@ -51,7 +51,7 @@ export class FlexcubeIndividualDto {
   @IsString() @IsNotEmpty() RESIDENT: string;
   /** STTM_KYC_RETAIL_CUSTOM.FUND_SOURCE: one source-of-income value (mapping V2_5). */
   @IsString() @IsNotEmpty() FUND_SOURCE: string;
-  /** Numeric (REIS m_income is numeric). Numeric strings are accepted; blank/null/NaN are rejected, never 0. Transport TBD. */
+  /** Numeric (REIS m_income is numeric). Plain numeric strings and standard thousands formatting are accepted; blank/null/NaN are rejected, never 0. Transport TBD. */
   @StrictNumber() @IsNumber({ allowNaN: false, allowInfinity: false }) MONTHLY_INCOME: number;
 }
 
@@ -104,7 +104,7 @@ export class FlexcubeCorporateDto {
   /** Values such as 203/204 await Bank verification. */
   @IsString() @IsNotEmpty() ACC_PURPOSE: string;
   @IsString() @IsNotEmpty() SOURCE_OF_INCOME: string;
-  /** Numeric (REIS fin_info is numeric). Numeric strings are accepted; blank/null/NaN are rejected, never 0. Transport TBD. */
+  /** Numeric (REIS fin_info is numeric). Plain numeric strings and standard thousands formatting are accepted; blank/null/NaN are rejected, never 0. Transport TBD. */
   @StrictNumber() @IsNumber({ allowNaN: false, allowInfinity: false }) FIN_INFO: number;
   @IsOptional() @IsString() TRADE_NO?: string;
   /** Key persons read from STTM_KYC_CORP_KEYPERSONS (absent / empty = no related parties). */

@@ -48,7 +48,7 @@ Status labels used below: **CONFIRMED** (stated by the Bank/FLEXCUBE/REIS docume
 | `RESIDENT` | `isResident` | interpreted by `IFlexcubeResidentParser`; default accepts only `Y`/`N`, else rejected | **PROVISIONAL** (FLEXCUBE source values unconfirmed) |
 | `NATIONALITY`, `CITIZENSHIP` | `nationality`, `citizenship` | one value each; FLEXCUBE need not send duplicates | PROVISIONAL field names |
 | `INCOME_SOURCES` (map name -> Y/N) | `selectedIncomeSources` | names set to `Y`, in received order; non Y/N flag rejected | PROVISIONAL shape (real columns unknown) |
-| `MONTHLY_INCOME`, `FIN_INFO` | `monthlyIncome`, `financialInfo` | strict number: numeric strings like `"1500.50"` accepted; blank, whitespace, null, undefined, NaN, Infinity, `1e3`, text rejected - never becomes 0 | CONFIRMED numeric type; FLEXCUBE transport PROVISIONAL |
+| `MONTHLY_INCOME`, `FIN_INFO` | `monthlyIncome`, `financialInfo` | strict number: numeric strings like `"1500.50"` and correctly grouped thousands such as `"1,500.50"` accepted; blank, whitespace, null, undefined, NaN, Infinity, `1e3`, malformed grouping (such as `"1,00,000"`) and text rejected - never becomes 0 | CONFIRMED numeric type; FLEXCUBE transport PROVISIONAL |
 | `OPERATION_COUNTRY` | `operationCountries` | list, at least one, every entry non-blank | PROVISIONAL input shape; REIS array semantics CONFIRMED |
 | `TIN`, `NID` | `documentTypeRaw`, `nid` | optional, kept separate; blank = not provided | CONFIRMED (free text; never sent unmapped) |
 | `BIRTH_PLACE`, `TRADE_NO` | `birthPlace`, `tradeNo` | optional | PROVISIONAL names |
